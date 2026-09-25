@@ -11,6 +11,7 @@ use {
     solana_address::Address,
     solana_clap_v3_utils::input_parsers::signer::SignerSource,
     solana_hash::Hash,
+    solana_message::{VersionedMessage, v1},
     solana_signer::Signer,
     spl_ed25519_signer_client::{ProgrammaticSigner, message::wrapped_message},
     spl_message_executor_client::instruction::execute,
@@ -65,20 +66,6 @@ pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -
     authorities.sort_unstable();
     authorities.dedup();
     let instruction = execute(&command.nonce_account, &command.nonce_authority, &inner);
-    // wrapped_message compiles u8 indices and casts header counts. Reject oversized inputs
-    // before invoking it, so malformed input cannot panic or truncate the counts.
-    let account_count = instruction
-        .accounts
-        .iter()
-        .map(|meta| meta.pubkey)
-        .chain(authorities.iter().copied())
-        .chain(std::iter::once(instruction.program_id))
-        .collect::<BTreeSet<_>>()
-        .len();
-    ensure!(
-        account_count <= 256,
-        "too many accounts for the wrapped message"
-    );
     let inner_signers = &inner.account_keys[..usize::from(inner.header.num_required_signatures)];
     let derived_signers = authorities
         .iter()
@@ -105,9 +92,14 @@ pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
+    // Every authority is a wrapped signer, so this also bounds the wrapped message's account keys
+    // well below the 256 at which wrapped_message panics compiling u8 indexes. Check it before
+    // building the message.
     ensure!(
-        wrapped_signers.len() < 128,
-        "too many required signers for a legacy message"
+        wrapped_signers.len() <= usize::from(v1::MAX_SIGNATURES),
+        "too many required signers for the wrapped message: {} exceeds the v1 limit of {}",
+        wrapped_signers.len(),
+        v1::MAX_SIGNATURES
     );
     for authority in &authorities {
         let pda = ProgrammaticSigner::derive_address(&spl_ed25519_signer_client::id(), authority);
@@ -118,7 +110,12 @@ pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -
         );
     }
     let outer = wrapped_message(&instruction, &wrapped_signers);
-    outer.sanitize().context("invalid wrapped message")?;
+    // Validate the v1 message directly. Its errors name the violated limit, which sanitize's
+    // generic errors do not.
+    let VersionedMessage::V1(wrapped_v1) = &outer else {
+        unreachable!("wrapped_message builds a v1 message");
+    };
+    wrapped_v1.validate().context("invalid wrapped message")?;
     let execute_message = BASE64_STANDARD.encode(outer.serialize());
 
     let signers = if command.signer.is_empty() {

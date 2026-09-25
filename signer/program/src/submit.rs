@@ -11,7 +11,7 @@ use {
         error::ProgramError,
         instruction::{InstructionAccount, InstructionView},
     },
-    solana_message::{VersionedMessage, compiled_instruction::CompiledInstruction},
+    solana_message::{VersionedMessage, compiled_instruction::CompiledInstruction, v1},
     solana_signature::Signature,
     spl_ed25519_signer_interface::{error::Error, pda::ProgrammaticSigner},
 };
@@ -30,12 +30,23 @@ pub fn process_submit(
     signatures: &[Signature],
     message: &VersionedMessage,
 ) -> ProgramResult {
+    let VersionedMessage::V1(message) = message else {
+        return Err(Error::UnsupportedMessageVersion.into());
+    };
+
+    // Validation also rejects duplicate account keys, so each key has one set of privileges.
     message
-        .sanitize()
+        .validate()
         .map_err(|_| Error::InvalidWrappedMessage)?;
 
+    // The wrapped message is only an authorization envelope. Reject config fields so
+    // authorities never approve fees or limits that have no effect.
+    if message.config != v1::TransactionConfig::default() {
+        return Err(Error::UnsupportedTransactionConfig.into());
+    }
+
     // Exactly one executor instruction is expected
-    let [executor_instruction] = message.instructions() else {
+    let [executor_instruction] = message.instructions.as_slice() else {
         return Err(Error::InvalidExecutorInstructionCount.into());
     };
 
@@ -67,10 +78,10 @@ struct ExecutorAccount<'a> {
 impl<'a> CheckedExecutorInstruction<'a> {
     fn try_new(
         outer_accounts: &'a [AccountView],
-        message: &'a VersionedMessage,
+        message: &'a v1::Message,
         executor_instruction: &'a CompiledInstruction,
     ) -> Result<Self, ProgramError> {
-        let wrapped_account_keys = message.static_account_keys();
+        let wrapped_account_keys = &message.account_keys;
 
         // The relayer must supply the wrapped message's account keys in signed order, so
         // executor account indexes resolve to the accounts the authorities signed.
@@ -89,7 +100,7 @@ impl<'a> CheckedExecutorInstruction<'a> {
         }
 
         // The executor program is selected by the signed message, not by a separate `Submit`
-        // account. Infallible: sanitization guarantees the index hits the static account keys.
+        // account. Infallible: validation guarantees the index is within the account keys.
         let program_id = wrapped_account_keys
             .get(usize::from(executor_instruction.program_id_index))
             .unwrap();
@@ -97,19 +108,17 @@ impl<'a> CheckedExecutorInstruction<'a> {
         // Only allow trusted executor entrypoints to receive promoted signers.
         executor_policy::validate(program_id, &executor_instruction.data)?;
 
-        // V0 address table lookups are never resolved, so every executor account index must
-        // hit the static account keys, which the outer accounts mirror one-to-one.
+        // Infallible: validation guarantees every executor account index is within the account
+        // keys, which the outer accounts mirror one-to-one.
         let accounts = executor_instruction
             .accounts
             .iter()
             .map(|account_index| {
                 let index = usize::from(*account_index);
-                let account = outer_accounts
-                    .get(index)
-                    .ok_or(Error::InvalidExecutorAccountIndex)?;
-                Ok(ExecutorAccount { account, index })
+                let account = outer_accounts.get(index).unwrap();
+                ExecutorAccount { account, index }
             })
-            .collect::<Result<Vec<_>, ProgramError>>()?;
+            .collect();
 
         Ok(Self {
             program_id,
@@ -121,19 +130,16 @@ impl<'a> CheckedExecutorInstruction<'a> {
 
 fn verify_authority_signatures<'a>(
     signatures: &[Signature],
-    message: &'a VersionedMessage,
+    message: &'a v1::Message,
 ) -> Result<&'a [Address], ProgramError> {
-    let required_signatures = usize::from(message.header().num_required_signatures);
+    let required_signatures = usize::from(message.header.num_required_signatures);
     if signatures.len() != required_signatures {
         return Err(Error::InvalidSignatureCount.into());
     }
 
     // Required signers occupy the leading account key slots. Signatures use the same indexes.
-    // Infallible: message sanitization guarantees a static account key for every required signer.
-    let authorities = message
-        .static_account_keys()
-        .get(..required_signatures)
-        .unwrap();
+    // Infallible: message validation guarantees an account key for every required signer.
+    let authorities = message.account_keys.get(..required_signatures).unwrap();
 
     let message_bytes = message.serialize();
 
@@ -178,7 +184,7 @@ fn collect_authorized_signers(
 }
 
 fn invoke_executor_instruction(
-    message: &VersionedMessage,
+    message: &v1::Message,
     executor_instruction: &CheckedExecutorInstruction,
     authorized_signers: &[AuthorizedSigner],
 ) -> ProgramResult {

@@ -1,5 +1,5 @@
 === Authorization ===
-Message hash: CzHXyozvKS2rNb3jhh2TaSqYF8QFtxKa1JbR1kmo1rQk
+Message hash: CKoZ2gaq6zomRS3XLFWgk5CBXxYeQkWKy58SExhQML6S
 PDA promotion authorities:
   AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9 (derived signer: 3jCYn5zriQtvK6iEkWyDc3M6dkHvmR9XccrZyjJF96tF)
 
@@ -12,7 +12,7 @@ Expected nonce value (inner message's recent blockhash): YMN9Qj5jPNp7j14VPcML1B6
 Your signatures authorize this Execute call, including its accounts, permissions,
 and the inner message.
 
-Legacy message:
+v1 message:
 {
   "header": {
     "numRequiredSignatures": 1,
@@ -43,7 +43,13 @@ Legacy message:
       "data": "1bm15vGCmstjf134AARVYmBoKBdVgTo9ixtMzP2JZqcf3b8qGALaXhZaRRYMPmgGA3DG4E11MQDTvDLhWme2RqoWxNv2UjAJHq7CivKZhDBiH5GC5qoT7fCQ3ea6qSfET2zFqjto7FoF257Y9KXBBgnxMURbWREC2Y52gkaZY64CUxwZufTToKBy5hSHqUHpjAcjLjtJPVosnfQYMoN9Nw",
       "stackHeight": 1
     }
-  ]
+  ],
+  "transactionConfig": {
+    "priorityFee": null,
+    "computeUnitLimit": null,
+    "loadedAccountsDataSizeLimit": null,
+    "heapSize": null
+  }
 }
 
 === Inner message (what the executor program invokes via CPI) ===

@@ -35,3 +35,16 @@ pub(super) fn executable_inner_message(message: VersionedMessage) -> Result<v1::
     );
     Ok(message)
 }
+
+/// Read an execute message the signer program accepts.
+pub(super) fn read_execute_message(input: &str) -> Result<VersionedMessage> {
+    let message = read_message(input, "execute message")?;
+    let VersionedMessage::V1(v1_message) = &message else {
+        bail!("the signer program supports only v1 execute messages");
+    };
+    ensure!(
+        v1_message.config == v1::TransactionConfig::default(),
+        "execute message must not set transaction config fields"
+    );
+    Ok(message)
+}

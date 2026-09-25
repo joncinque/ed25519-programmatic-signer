@@ -18,29 +18,32 @@ export const ED25519_SIGNER_ERROR__INVALID_WRAPPED_MESSAGE = 0x0; // 0
 export const ED25519_SIGNER_ERROR__INVALID_EXECUTOR_INSTRUCTION_COUNT = 0x1; // 1
 export const ED25519_SIGNER_ERROR__ACCOUNT_KEY_MISMATCH = 0x2; // 2
 export const ED25519_SIGNER_ERROR__INVALID_SIGNATURE = 0x3; // 3
-export const ED25519_SIGNER_ERROR__INVALID_EXECUTOR_ACCOUNT_INDEX = 0x4; // 4
-export const ED25519_SIGNER_ERROR__DISALLOWED_EXECUTOR_INSTRUCTION = 0x5; // 5
-export const ED25519_SIGNER_ERROR__INVALID_SIGNATURE_COUNT = 0x6; // 6
+export const ED25519_SIGNER_ERROR__DISALLOWED_EXECUTOR_INSTRUCTION = 0x4; // 4
+export const ED25519_SIGNER_ERROR__INVALID_SIGNATURE_COUNT = 0x5; // 5
+export const ED25519_SIGNER_ERROR__UNSUPPORTED_MESSAGE_VERSION = 0x6; // 6
+export const ED25519_SIGNER_ERROR__UNSUPPORTED_TRANSACTION_CONFIG = 0x7; // 7
 
 export type Ed25519SignerError =
     | typeof ED25519_SIGNER_ERROR__ACCOUNT_KEY_MISMATCH
     | typeof ED25519_SIGNER_ERROR__DISALLOWED_EXECUTOR_INSTRUCTION
-    | typeof ED25519_SIGNER_ERROR__INVALID_EXECUTOR_ACCOUNT_INDEX
     | typeof ED25519_SIGNER_ERROR__INVALID_EXECUTOR_INSTRUCTION_COUNT
     | typeof ED25519_SIGNER_ERROR__INVALID_SIGNATURE
     | typeof ED25519_SIGNER_ERROR__INVALID_SIGNATURE_COUNT
-    | typeof ED25519_SIGNER_ERROR__INVALID_WRAPPED_MESSAGE;
+    | typeof ED25519_SIGNER_ERROR__INVALID_WRAPPED_MESSAGE
+    | typeof ED25519_SIGNER_ERROR__UNSUPPORTED_MESSAGE_VERSION
+    | typeof ED25519_SIGNER_ERROR__UNSUPPORTED_TRANSACTION_CONFIG;
 
 let ed25519SignerErrorMessages: Record<Ed25519SignerError, string> | undefined;
 if (process.env['NODE_ENV'] !== 'production') {
     ed25519SignerErrorMessages = {
         [ED25519_SIGNER_ERROR__ACCOUNT_KEY_MISMATCH]: `A Submit account differs from the wrapped message key at the same index`,
         [ED25519_SIGNER_ERROR__DISALLOWED_EXECUTOR_INSTRUCTION]: `The executor program and instruction pair is not permitted by this signer program`,
-        [ED25519_SIGNER_ERROR__INVALID_EXECUTOR_ACCOUNT_INDEX]: `The executor references an index outside the static account-key list`,
         [ED25519_SIGNER_ERROR__INVALID_EXECUTOR_INSTRUCTION_COUNT]: `The wrapped message must contain exactly one executor instruction`,
         [ED25519_SIGNER_ERROR__INVALID_SIGNATURE]: `An authority signature failed verification against the wrapped message`,
         [ED25519_SIGNER_ERROR__INVALID_SIGNATURE_COUNT]: `The authority signature count does not match the wrapped message.`,
         [ED25519_SIGNER_ERROR__INVALID_WRAPPED_MESSAGE]: `The wrapped message failed sanitization`,
+        [ED25519_SIGNER_ERROR__UNSUPPORTED_MESSAGE_VERSION]: `The wrapped message is not a v1 message`,
+        [ED25519_SIGNER_ERROR__UNSUPPORTED_TRANSACTION_CONFIG]: `The wrapped message sets transaction config fields`,
     };
 }
 

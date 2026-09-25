@@ -11,8 +11,7 @@ use {
     solana_instruction::{AccountMeta, error::InstructionError},
     solana_keypair::Keypair,
     solana_message::{
-        MessageHeader, VersionedMessage, compiled_instruction::CompiledInstruction,
-        legacy::Message, v0, v1,
+        MessageHeader, VersionedMessage, compiled_instruction::CompiledInstruction, legacy, v0, v1,
     },
     solana_program_error::ProgramError,
     solana_signer::Signer as _,
@@ -27,7 +26,7 @@ pub mod helpers;
 
 #[test]
 fn submit_rejects_no_required_signatures() {
-    let ix = submit(vec![], VersionedMessage::Legacy(Message::default()));
+    let ix = submit(vec![], VersionedMessage::V1(v1::Message::default()));
 
     init_mollusk().process_and_validate_instruction(
         &ix,
@@ -47,7 +46,7 @@ fn submit_rejects_mismatched_signature_count(mutation: fn(&mut VersionedTransact
 
 #[test_case(|msg| msg.instructions[0].program_id_index = u8::MAX; "program index")]
 #[test_case(|msg| msg.instructions[0].accounts[0] = u8::MAX; "executor account index")]
-fn submit_rejects_out_of_bounds_instruction_index(mutation: fn(&mut Message)) {
+fn submit_rejects_out_of_bounds_instruction_index(mutation: fn(&mut v1::Message)) {
     SubmitBuilder::default_transfer()
         .mutate_message(mutation)
         .check_err(Error::InvalidWrappedMessage)
@@ -56,7 +55,7 @@ fn submit_rejects_out_of_bounds_instruction_index(mutation: fn(&mut Message)) {
 
 #[test_case(|msg| msg.instructions.clear(); "none")]
 #[test_case(|msg| msg.instructions.push(msg.instructions[0].clone()); "multiple")]
-fn submit_rejects_wrong_executor_instruction_count(mutation: fn(&mut Message)) {
+fn submit_rejects_wrong_executor_instruction_count(mutation: fn(&mut v1::Message)) {
     SubmitBuilder::default_transfer()
         .mutate_message(mutation)
         .check_err(Error::InvalidExecutorInstructionCount)
@@ -96,10 +95,10 @@ fn submit_rejects_account_key_mismatch() {
 
 // Any post-signing change to the signed message must fail signature verification
 #[test_case(|msg| *msg.account_keys.last_mut().unwrap() = Address::new_unique(); "account key")]
-#[test_case(|msg| msg.recent_blockhash = Hash::new_from_array([99; 32]); "recent blockhash")]
+#[test_case(|msg| msg.lifetime_specifier = Hash::new_from_array([99; 32]); "lifetime specifier")]
 #[test_case(|msg| msg.instructions[0].accounts[1] = msg.instructions[0].accounts[0]; "executor account index")]
 #[test_case(|msg| msg.instructions[0].data[1] ^= 1; "executor instruction data")]
-fn submit_rejects_post_sign_message_change(post_sign_change: fn(&mut Message)) {
+fn submit_rejects_post_sign_message_change(post_sign_change: fn(&mut v1::Message)) {
     SubmitBuilder::default_transfer()
         .tamper_message(post_sign_change)
         .check_err(Error::InvalidSignature)
@@ -130,33 +129,6 @@ fn submit_verifies_every_signature() {
                 wrong_authority.sign_message(&transaction.message.serialize());
         })
         .check_err(Error::InvalidSignature)
-        .execute();
-}
-
-#[test]
-fn submit_rejects_v0_loaded_executor_account_index() {
-    // The executor instruction references an account index in the lookup-table range,
-    // which the program never resolves.
-    let authority = Keypair::new();
-    let message = VersionedMessage::V0(v0::Message {
-        header: MessageHeader {
-            num_required_signatures: 1,
-            num_readonly_signed_accounts: 0,
-            num_readonly_unsigned_accounts: 0,
-        },
-        account_keys: vec![authority.pubkey(), spl_message_executor_interface::id()],
-        recent_blockhash: Hash::default(),
-        instructions: vec![CompiledInstruction::new_from_raw_parts(1, vec![0], vec![2])],
-        address_table_lookups: vec![v0::MessageAddressTableLookup {
-            account_key: Address::new_unique(),
-            writable_indexes: vec![],
-            readonly_indexes: vec![0],
-        }],
-    });
-
-    SubmitBuilder::default_transfer_with_authority(authority)
-        .message(message)
-        .check_err(Error::InvalidExecutorAccountIndex)
         .execute();
 }
 
@@ -373,10 +345,10 @@ fn submit_forwards_required_outer_signer_privilege() {
 }
 
 #[test]
-fn submit_treats_recent_blockhash_as_signed_opaque_bytes() {
+fn submit_treats_lifetime_specifier_as_signed_opaque_bytes() {
     let result = SubmitBuilder::default_transfer()
         .mutate_message(|msg| {
-            msg.recent_blockhash = Hash::new_from_array([42; 32]); // not default blockhash
+            msg.lifetime_specifier = Hash::new_from_array([42; 32]); // not default blockhash
         })
         .execute();
 
@@ -452,51 +424,61 @@ fn submit_allows_multiple_writable_authorities() {
 }
 
 #[test]
-fn submit_accepts_static_legacy_message() {
-    assert_static_message_executes(|header, account_keys, recent_blockhash, instructions| {
-        VersionedMessage::Legacy(Message {
-            header,
-            account_keys,
-            recent_blockhash,
-            instructions,
-        })
-    });
-}
-
-#[test]
-fn submit_accepts_static_v0_message() {
-    assert_static_message_executes(|header, account_keys, recent_blockhash, instructions| {
-        VersionedMessage::V0(v0::Message {
-            header,
-            account_keys,
-            recent_blockhash,
-            instructions,
-            address_table_lookups: vec![],
-        })
-    });
-}
-
-#[test]
 fn submit_accepts_static_v1_message() {
-    assert_static_message_executes(|header, account_keys, recent_blockhash, instructions| {
-        VersionedMessage::V1(v1::Message::new(
-            header,
-            v1::TransactionConfig::empty(),
-            recent_blockhash,
-            account_keys,
-            instructions,
-        ))
-    });
+    let (authority, recipient, message) =
+        static_transfer_message(|header, account_keys, lifetime_specifier, instructions| {
+            VersionedMessage::V1(v1::Message::new(
+                header,
+                v1::TransactionConfig::default(),
+                lifetime_specifier,
+                account_keys,
+                instructions,
+            ))
+        });
+
+    let result = SubmitBuilder::default_transfer_with_authority(authority)
+        .message(message)
+        .execute();
+
+    assert_eq!(
+        result.account(&recipient).unwrap().lamports,
+        DEFAULT_TRANSFER_LAMPORTS
+    );
 }
 
-fn assert_static_message_executes(
-    build_message: impl FnOnce(
-        MessageHeader,
-        Vec<Address>,
-        Hash,
-        Vec<CompiledInstruction>,
-    ) -> VersionedMessage,
-) {
+#[test_case(|header, account_keys, recent_blockhash, instructions| {
+    VersionedMessage::Legacy(legacy::Message {
+        header,
+        account_keys,
+        recent_blockhash,
+        instructions,
+    })
+}; "legacy")]
+#[test_case(|header, account_keys, recent_blockhash, instructions| {
+    VersionedMessage::V0(v0::Message {
+        header,
+        account_keys,
+        recent_blockhash,
+        instructions,
+        address_table_lookups: vec![],
+    })
+}; "v0")]
+fn submit_rejects_non_v1_message(build_message: BuildMessage) {
+    // The message is otherwise valid and correctly signed, so only its version is rejected.
+    let (authority, _, message) = static_transfer_message(build_message);
+
+    SubmitBuilder::default_transfer_with_authority(authority)
+        .message(message)
+        .check_err(Error::UnsupportedMessageVersion)
+        .execute();
+}
+
+type BuildMessage =
+    fn(MessageHeader, Vec<Address>, Hash, Vec<CompiledInstruction>) -> VersionedMessage;
+
+/// Builds a signable message whose executor instruction transfers from the authority's
+/// programmatic signer to the returned recipient.
+fn static_transfer_message(build_message: BuildMessage) -> (Keypair, Address, VersionedMessage) {
     let authority = Keypair::new();
     let programmatic_signer = ProgrammaticSigner::derive_address(
         &spl_ed25519_signer_interface::id(),
@@ -529,64 +511,30 @@ fn assert_static_message_executes(
         )],
     );
 
-    let result = SubmitBuilder::default_transfer_with_authority(authority)
-        .message(message)
-        .execute();
+    (authority, recipient, message)
+}
 
-    assert_eq!(
-        result.account(&recipient).unwrap().lamports,
-        DEFAULT_TRANSFER_LAMPORTS
-    );
+#[test_case(v1::TransactionConfig::default().with_priority_fee(1); "priority fee")]
+#[test_case(v1::TransactionConfig::default().with_compute_unit_limit(1); "compute unit limit")]
+#[test_case(v1::TransactionConfig::default().with_loaded_accounts_data_size_limit(1); "loaded accounts data size limit")]
+#[test_case(v1::TransactionConfig::default().with_heap_size(v1::MIN_HEAP_SIZE); "heap size")]
+fn submit_rejects_transaction_config(config: v1::TransactionConfig) {
+    SubmitBuilder::default_transfer()
+        .mutate_message(move |msg| msg.config = config)
+        .check_err(Error::UnsupportedTransactionConfig)
+        .execute();
 }
 
 #[test]
-fn submit_accepts_v0_unused_address_table_lookups() {
-    let authority = Keypair::new();
-    let programmatic_signer = ProgrammaticSigner::derive_address(
-        &spl_ed25519_signer_interface::id(),
-        &authority.pubkey(),
-    );
-    let recipient = Address::new_unique();
-    let executor_instruction = stub_executor::wrap(transfer(
-        &programmatic_signer,
-        &recipient,
-        DEFAULT_TRANSFER_LAMPORTS,
-    ));
-    let message = VersionedMessage::V0(v0::Message {
-        header: MessageHeader {
-            num_required_signatures: 1,
-            num_readonly_signed_accounts: 0,
-            num_readonly_unsigned_accounts: 2,
-        },
-        account_keys: vec![
-            authority.pubkey(),
-            programmatic_signer,
-            recipient,
-            spl_message_executor_interface::id(),
-            solana_system_interface::program::id(),
-        ],
-        recent_blockhash: Hash::default(),
-        instructions: vec![CompiledInstruction::new_from_raw_parts(
-            3,
-            executor_instruction.data,
-            vec![1, 2, 4],
-        )],
-        // Unused lookups are allowed if executor account indexes still resolve to static keys
-        address_table_lookups: vec![v0::MessageAddressTableLookup {
-            account_key: Address::new_unique(),
-            writable_indexes: vec![],
-            readonly_indexes: vec![0],
-        }],
-    });
-
-    let result = SubmitBuilder::default_transfer_with_authority(authority)
-        .message(message)
+fn submit_rejects_duplicate_account_keys() {
+    // One key must not hold conflicting privileges across two account key slots.
+    SubmitBuilder::default_transfer()
+        .mutate_message(|msg| {
+            let duplicate = msg.account_keys[1];
+            *msg.account_keys.last_mut().unwrap() = duplicate;
+        })
+        .check_err(Error::InvalidWrappedMessage)
         .execute();
-
-    assert_eq!(
-        result.account(&recipient).unwrap().lamports,
-        DEFAULT_TRANSFER_LAMPORTS
-    );
 }
 
 #[test]

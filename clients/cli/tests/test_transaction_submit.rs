@@ -161,6 +161,35 @@ fn rejects_invalid_message_encoding(encoded: &str, expected: &str) {
     assert_failure(&env.submit(encoded, &[]), expected);
 }
 
+#[test_case(
+    |message| VersionedMessage::Legacy(legacy::Message {
+        header: message.header,
+        account_keys: message.account_keys,
+        recent_blockhash: message.lifetime_specifier,
+        instructions: message.instructions,
+    }),
+    "the signer program supports only v1 execute messages";
+    "legacy"
+)]
+#[test_case(
+    |message| VersionedMessage::V1(v1::Message {
+        config: v1::TransactionConfig::default().with_priority_fee(1),
+        ..message
+    }),
+    "execute message must not set transaction config fields";
+    "transaction config"
+)]
+fn rejects_execute_message_the_signer_cannot_submit(
+    convert: fn(v1::Message) -> VersionedMessage,
+    expected: &str,
+) {
+    let env = SubmitTestEnv::new();
+    let VersionedMessage::V1(message) = env.message.clone() else {
+        panic!("expected a v1 execute message");
+    };
+    assert_failure(&env.submit(&encode(&convert(message)), &[]), expected);
+}
+
 #[test]
 fn rejects_non_executor_instruction() {
     let env = SubmitTestEnv::new();

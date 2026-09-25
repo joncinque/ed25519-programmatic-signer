@@ -5,7 +5,7 @@ use {
     solana_address::Address,
     solana_instruction::Instruction as SolanaInstruction,
     solana_keypair::Keypair,
-    solana_message::{VersionedMessage, legacy::Message},
+    solana_message::{VersionedMessage, v1},
     solana_program_error::ProgramError,
     solana_signer::Signer as _,
     solana_system_interface::instruction::transfer,
@@ -17,7 +17,7 @@ use {
 pub const DEFAULT_TRANSFER_LAMPORTS: u64 = 1_000_000;
 
 type IxMutation = Box<dyn FnOnce(&mut SolanaInstruction)>;
-type MessageMutation = Box<dyn FnOnce(&mut Message)>;
+type MessageMutation = Box<dyn FnOnce(&mut v1::Message)>;
 type TransactionTamper = Box<dyn FnOnce(&mut VersionedTransaction)>;
 
 pub fn funded_account() -> Account {
@@ -103,13 +103,13 @@ impl<'a> SubmitBuilder<'a> {
     }
 
     /// Mutates the wrapped message before signing, so the authorities sign the change.
-    pub fn mutate_message(mut self, mutation: impl FnOnce(&mut Message) + 'static) -> Self {
+    pub fn mutate_message(mut self, mutation: impl FnOnce(&mut v1::Message) + 'static) -> Self {
         self.message_mutations.push(Box::new(mutation));
         self
     }
 
     /// Tampers with the wrapped message after signing, so signatures no longer cover it.
-    pub fn tamper_message(mut self, tamper: impl FnOnce(&mut Message) + 'static) -> Self {
+    pub fn tamper_message(mut self, tamper: impl FnOnce(&mut v1::Message) + 'static) -> Self {
         self.message_tampers.push(Box::new(tamper));
         self
     }
@@ -166,11 +166,11 @@ impl<'a> SubmitBuilder<'a> {
                 }
 
                 let mut message = wrapped_message(&executor_instruction, &context.authorities);
-                let VersionedMessage::Legacy(legacy_message) = &mut message else {
-                    panic!("expected legacy message");
+                let VersionedMessage::V1(v1_message) = &mut message else {
+                    panic!("expected v1 message");
                 };
                 for mutation in self.message_mutations.drain(..) {
-                    mutation(legacy_message);
+                    mutation(v1_message);
                 }
                 message
             }
@@ -180,8 +180,8 @@ impl<'a> SubmitBuilder<'a> {
         let mut transaction = VersionedTransaction::try_new(message, &signers).unwrap();
 
         if !self.message_tampers.is_empty() {
-            let VersionedMessage::Legacy(msg) = &mut transaction.message else {
-                panic!("tamper_message requires a legacy wrapped message");
+            let VersionedMessage::V1(msg) = &mut transaction.message else {
+                panic!("tamper_message requires a v1 wrapped message");
             };
             for tamper in self.message_tampers.drain(..) {
                 tamper(msg);

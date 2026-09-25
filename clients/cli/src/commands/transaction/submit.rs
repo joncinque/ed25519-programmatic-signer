@@ -1,6 +1,6 @@
 use {
     super::{
-        decode::{executable_inner_message, read_message},
+        decode::{executable_inner_message, read_execute_message},
         summary::{confirm_signing, render_signing_summary},
     },
     crate::{cli::keypair_source_parser, client::Client, output::OutputFormat},
@@ -25,7 +25,7 @@ use {
 
 #[derive(Debug, Args)]
 pub(super) struct SubmitCommand {
-    /// Base64-encoded execute message returned by `transaction sign`.
+    /// Base64-encoded v1 execute message returned by `transaction sign`.
     #[clap(long)]
     execute_message: String,
 
@@ -57,7 +57,7 @@ pub(super) async fn run(
     client: &Client,
     output: OutputFormat,
 ) -> Result<String> {
-    let message = read_message(&command.execute_message, "execute message")?;
+    let message = read_execute_message(&command.execute_message)?;
     let execute = ExecuteAccounts::try_new(&message)?;
     let required_signers = message.static_account_keys()
         [..usize::from(message.header().num_required_signatures)]
@@ -231,13 +231,13 @@ impl ExecuteAccounts {
                 .context("invalid Execute instruction")?;
         let inner = executable_inner_message(inner)?;
 
-        // The signer program does not resolve address lookup tables.
+        // Infallible: read_execute_message sanitized the message, which checks every instruction
+        // account index is within the account keys.
         let accounts = instruction
             .accounts
             .iter()
-            .map(|index| account_keys.get(usize::from(*index)).copied())
-            .collect::<Option<Vec<_>>>()
-            .context("Execute accounts must use static account keys")?;
+            .map(|index| account_keys[usize::from(*index)])
+            .collect::<Vec<_>>();
         let [nonce_authority, nonce_account, _nonce_program, ..] = accounts.as_slice() else {
             bail!(
                 "expected the nonce authority, nonce account, and SPL Nonce program in Execute \

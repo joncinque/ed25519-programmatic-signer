@@ -162,21 +162,27 @@
       },
       {
         "kind": "errorNode",
-        "name": "invalidExecutorAccountIndex",
-        "code": 4,
-        "message": "The executor references an index outside the static account-key list"
-      },
-      {
-        "kind": "errorNode",
         "name": "disallowedExecutorInstruction",
-        "code": 5,
+        "code": 4,
         "message": "The executor program and instruction pair is not permitted by this signer program"
       },
       {
         "kind": "errorNode",
         "name": "invalidSignatureCount",
-        "code": 6,
+        "code": 5,
         "message": "The authority signature count does not match the wrapped message."
+      },
+      {
+        "kind": "errorNode",
+        "name": "unsupportedMessageVersion",
+        "code": 6,
+        "message": "The wrapped message is not a v1 message"
+      },
+      {
+        "kind": "errorNode",
+        "name": "unsupportedTransactionConfig",
+        "code": 7,
+        "message": "The wrapped message sets transaction config fields"
       }
     ]
   },

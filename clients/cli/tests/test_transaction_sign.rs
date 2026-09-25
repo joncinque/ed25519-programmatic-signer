@@ -4,6 +4,7 @@ use {
     solana_address::Address,
     solana_cli_config::Config as SolanaConfig,
     solana_hash::Hash,
+    solana_instruction::AccountMeta,
     solana_keypair::{Keypair, write_keypair_file},
     solana_message::{VersionedMessage, legacy, v0, v1},
     solana_signature::Signature,
@@ -327,12 +328,22 @@ fn rejects_invalid_inner(mutate: fn(&mut v1::Message), error: &str) {
 }
 
 #[test]
-fn rejects_too_many_wrapped_accounts_without_panicking() {
+fn rejects_too_many_wrapped_accounts() {
     let mut env = SignTestEnv::new();
-    while env.authorities.len() < 256 {
-        env.authorities.push(Address::new_unique().to_string());
+    // The inner message sits at the v1 account limit, and the wrapped message adds the nonce and
+    // executor accounts on top.
+    let pda = env.inner.account_keys[0];
+    let mut instruction = transfer(&pda, &Address::new_from_array([3; 32]), 1);
+    // The system program takes the last account key.
+    while instruction.accounts.len() < usize::from(v1::MAX_ADDRESSES) - 1 {
+        instruction
+            .accounts
+            .push(AccountMeta::new_readonly(Address::new_unique(), false));
     }
-    env.reject("too many accounts for the wrapped message");
+    env.inner = v1::Message::try_compile(&pda, &[instruction], Hash::default()).unwrap();
+    assert_eq!(env.inner.account_keys.len(), usize::from(v1::MAX_ADDRESSES));
+    env.encoded = BASE64_STANDARD.encode(env.inner.serialize());
+    env.reject("too many addresses (max 64)");
 }
 
 #[test]
@@ -433,7 +444,7 @@ fn requires_explicit_authorities() {
 #[test]
 fn rejects_too_many_authorities_before_loading_wallet() {
     let mut env = SignTestEnv::new();
-    env.authorities = (0..128)
+    env.authorities = (0..=v1::MAX_SIGNATURES)
         .map(|_| Address::new_unique().to_string())
         .collect();
     fs::remove_file(env.directory.path().join("authority.json")).unwrap();
@@ -684,9 +695,12 @@ fn authority_used_directly_is_also_forwarded(is_nonce_authority: bool) {
 #[test]
 fn rejects_too_many_combined_signers_before_loading_wallet() {
     let mut env = SignTestEnv::new();
-    while env.authorities.len() < 128 {
+    // The authorities alone reach the v1 signer limit, and the forwarded nonce authority pushes
+    // the wrapped message over it.
+    while env.authorities.len() < usize::from(v1::MAX_SIGNATURES) {
         env.authorities.push(Address::new_unique().to_string());
     }
+    env.nonce_authority = Address::new_unique().to_string();
     fs::remove_file(env.directory.path().join("authority.json")).unwrap();
     env.reject("too many required signers");
 }

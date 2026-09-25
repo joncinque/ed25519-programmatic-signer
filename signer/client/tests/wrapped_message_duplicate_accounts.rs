@@ -132,7 +132,7 @@ fn unaffected_message_without_authority_writes_preserves_serialized_bytes() {
     use {
         solana_hash::Hash,
         solana_message::{
-            VersionedMessage, compiled_instruction::CompiledInstruction, legacy::Message,
+            MessageHeader, VersionedMessage, compiled_instruction::CompiledInstruction, v1,
         },
     };
 
@@ -157,10 +157,14 @@ fn unaffected_message_without_authority_writes_preserves_serialized_bytes() {
         data: vec![11, 12],
     };
     // With no authority writes, the first authority is the writable fee-payer placeholder.
-    let expected = VersionedMessage::Legacy(Message::new_with_compiled_instructions(
-        2,
-        1,
-        3,
+    let expected = VersionedMessage::V1(v1::Message::new(
+        MessageHeader {
+            num_required_signatures: 2,
+            num_readonly_signed_accounts: 1,
+            num_readonly_unsigned_accounts: 3,
+        },
+        v1::TransactionConfig::default(),
+        Hash::default(),
         vec![
             first_authority,
             second_authority,
@@ -170,7 +174,6 @@ fn unaffected_message_without_authority_writes_preserves_serialized_bytes() {
             readonly1,
             readonly2,
         ],
-        Hash::default(),
         vec![CompiledInstruction {
             program_id_index: 4,
             accounts: vec![5, 2, 6, 3],
@@ -187,7 +190,7 @@ fn unaffected_message_with_authority_writes_preserves_serialized_bytes() {
     use {
         solana_hash::Hash,
         solana_message::{
-            VersionedMessage, compiled_instruction::CompiledInstruction, legacy::Message,
+            MessageHeader, VersionedMessage, compiled_instruction::CompiledInstruction, v1,
         },
     };
 
@@ -213,10 +216,14 @@ fn unaffected_message_with_authority_writes_preserves_serialized_bytes() {
         data: vec![11, 12],
     };
     // The written authority moves ahead of the readonly authority.
-    let expected = VersionedMessage::Legacy(Message::new_with_compiled_instructions(
-        2,
-        1,
-        3,
+    let expected = VersionedMessage::V1(v1::Message::new(
+        MessageHeader {
+            num_required_signatures: 2,
+            num_readonly_signed_accounts: 1,
+            num_readonly_unsigned_accounts: 3,
+        },
+        v1::TransactionConfig::default(),
+        Hash::default(),
         vec![
             second_authority,
             first_authority,
@@ -226,7 +233,6 @@ fn unaffected_message_with_authority_writes_preserves_serialized_bytes() {
             readonly1,
             readonly2,
         ],
-        Hash::default(),
         vec![CompiledInstruction {
             program_id_index: 4,
             accounts: vec![5, 2, 6, 3, 0],

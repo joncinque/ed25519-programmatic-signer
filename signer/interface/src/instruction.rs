@@ -20,6 +20,9 @@ pub enum Instruction {
     /// Verifies authority signatures over a Solana [`VersionedMessage`], then CPIs to the program
     /// of its single executor instruction, promoting `ProgrammaticSigner` PDAs to a signer.
     ///
+    /// Only [`v1::Message`](solana_message::v1::Message) is supported. It is encoded with its
+    /// version prefix and must leave every transaction config field unset.
+    ///
     /// Instruction data: instruction discriminator followed by signatures and message.
     ///
     /// On success, the program:
@@ -41,8 +44,6 @@ pub enum Instruction {
     /// Accounts required:
     /// - One account for each key in the wrapped message's `account_keys` list, in the same order.
     ///   At every index, the submitted account key and writable flag must match the wrapped message.
-    ///   V0 address table lookups are not resolved. The executor instruction must reference only
-    ///   static `account_keys` indices.
     #[cfg_attr(
         feature = "codama",
         codama(display(intent = "Verify wrapped message and invoke its executor"))
@@ -75,15 +76,18 @@ impl Instruction {
 #[cfg(test)]
 mod tests {
     use {
-        super::Instruction, alloc::vec, solana_message::VersionedMessage,
-        solana_program_error::ProgramError, solana_signature::Signature,
+        super::Instruction,
+        alloc::vec,
+        solana_message::{VersionedMessage, v1},
+        solana_program_error::ProgramError,
+        solana_signature::Signature,
     };
 
     #[test]
     fn instruction_tags_match_wire_format() {
         let instruction = Instruction::Submit {
             signatures: vec![],
-            message: VersionedMessage::default(),
+            message: VersionedMessage::V1(v1::Message::default()),
         };
         assert_eq!(wincode::serialize(&instruction).unwrap()[0], 0);
     }
@@ -92,7 +96,7 @@ mod tests {
     fn submit_round_trips() {
         let instruction = Instruction::Submit {
             signatures: vec![Signature::from([7; 64])],
-            message: VersionedMessage::default(),
+            message: VersionedMessage::V1(v1::Message::default()),
         };
         let bytes = wincode::serialize(&instruction).unwrap();
         assert_eq!(Instruction::try_from_bytes(&bytes).unwrap(), instruction);
@@ -102,7 +106,7 @@ mod tests {
     fn submit_rejects_trailing_data() {
         let mut bytes = wincode::serialize(&Instruction::Submit {
             signatures: vec![],
-            message: VersionedMessage::default(),
+            message: VersionedMessage::V1(v1::Message::default()),
         })
         .unwrap();
         bytes.extend_from_slice(&[1, 2, 3]);

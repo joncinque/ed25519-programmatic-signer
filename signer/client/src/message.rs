@@ -6,10 +6,14 @@ use {
     solana_address::Address,
     solana_hash::Hash,
     solana_instruction::Instruction,
-    solana_message::{AccountKeys, VersionedMessage, legacy::Message},
+    solana_message::{AccountKeys, MessageHeader, VersionedMessage, v1},
 };
 
-/// Builds the wrapped legacy message that the authorities sign over the executor instruction.
+/// Builds the wrapped v1 message that the authorities sign over the executor instruction.
+///
+/// Callers must keep the inputs within the v1 limits of `v1::MAX_SIGNATURES` authorities and
+/// `v1::MAX_ADDRESSES` account keys. Larger inputs build a message that fails sanitization, and
+/// more than 256 account keys panic.
 ///
 /// ```text
 /// account_keys                    privileges
@@ -91,14 +95,22 @@ pub fn wrapped_message(
         .try_compile_instructions(core::slice::from_ref(executor_instruction))
         .unwrap();
 
-    let message = Message::new_with_compiled_instructions(
-        authorities.len() as u8,
-        authorities.len().saturating_sub(writable_signers_count) as u8,
-        readonly_unsigned.len().saturating_add(1) as u8,
-        account_keys,
+    let header = MessageHeader {
+        num_required_signatures: authorities.len() as u8,
+        num_readonly_signed_accounts: authorities.len().saturating_sub(writable_signers_count)
+            as u8,
+        num_readonly_unsigned_accounts: readonly_unsigned.len().saturating_add(1) as u8,
+    };
+
+    // The wrapped message is never executed as a transaction, so it carries no transaction
+    // config and no lifetime.
+    let message = v1::Message::new(
+        header,
+        v1::TransactionConfig::default(),
         Hash::default(),
+        account_keys,
         compiled_instructions,
     );
 
-    VersionedMessage::Legacy(message)
+    VersionedMessage::V1(message)
 }
