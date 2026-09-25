@@ -14,7 +14,7 @@ use {
     solana_transaction::Transaction,
     solana_transaction_status::UiTransactionTokenBalance,
     spl_ed25519_signer_client::ProgrammaticSigner,
-    spl_legacy_message_executor_client::instruction::execute,
+    spl_message_executor_client::instruction::execute,
     std::{
         collections::{BTreeMap, BTreeSet, HashSet},
         fmt,

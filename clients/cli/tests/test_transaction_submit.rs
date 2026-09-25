@@ -12,8 +12,8 @@ use {
     solana_signer::Signer,
     solana_system_interface::instruction::transfer,
     spl_ed25519_signer_client::message::wrapped_message,
-    spl_legacy_message_executor_client::instruction::execute,
-    spl_legacy_message_executor_interface::instruction::Instruction as ExecutorInstruction,
+    spl_message_executor_client::instruction::execute,
+    spl_message_executor_interface::instruction::Instruction as ExecutorInstruction,
     std::{path::PathBuf, process::Output},
     tempfile::TempDir,
     test_case::test_case,
@@ -177,7 +177,7 @@ fn rejects_non_executor_instruction() {
 fn rejects_execute_without_nonce_accounts() {
     let env = SubmitTestEnv::new();
     let instruction = Instruction::new_with_wincode(
-        spl_legacy_message_executor_interface::id(),
+        spl_message_executor_interface::id(),
         &ExecutorInstruction::Execute(Message::default()),
         vec![AccountMeta::new(Address::new_unique(), false)],
     );

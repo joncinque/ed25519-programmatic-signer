@@ -1,7 +1,7 @@
 [package]
-name = "spl-legacy-message-executor-program"
+name = "spl-message-executor-program"
 version = "0.1.0"
-description = "SPL Legacy Message Executor program"
+description = "SPL Message Executor program"
 authors = { workspace = true }
 repository = { workspace = true }
 homepage = { workspace = true }
@@ -22,7 +22,7 @@ pinocchio = { workspace = true, features = ["alloc", "cpi"] }
 solana-hash = { workspace = true, features = ["copy"] }
 solana-message = { workspace = true }
 solana-sanitize = { workspace = true }
-spl-legacy-message-executor-interface = { workspace = true }
+spl-message-executor-interface = { workspace = true }
 spl-nonce-client = { workspace = true, features = ["cpi"] }
 spl-nonce-interface = { workspace = true }
 
@@ -34,5 +34,5 @@ solana-instruction = { workspace = true }
 solana-rent = { workspace = true }
 solana-program-error = { workspace = true }
 solana-system-interface = { workspace = true, features = ["wincode"] }
-spl-legacy-message-executor-client = { workspace = true }
+spl-message-executor-client = { workspace = true }
 wincode = { workspace = true }

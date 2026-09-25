@@ -3,7 +3,7 @@ use {
     solana_address::Address,
     solana_instruction::{AccountMeta, Instruction},
     solana_message::legacy,
-    spl_legacy_message_executor_interface::instruction::Instruction as MessageExecutorInstruction,
+    spl_message_executor_interface::instruction::Instruction as MessageExecutorInstruction,
 };
 
 /// Creates an `Execute` instruction for a legacy message.
@@ -28,7 +28,7 @@ pub fn execute(
     }
 
     Instruction::new_with_wincode(
-        spl_legacy_message_executor_interface::id(),
+        spl_message_executor_interface::id(),
         &MessageExecutorInstruction::Execute(message.clone()),
         accounts,
     )

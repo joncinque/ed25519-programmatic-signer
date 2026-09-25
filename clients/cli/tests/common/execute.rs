@@ -4,7 +4,7 @@ use {
     solana_message::{VersionedMessage, legacy::Message},
     solana_signer::Signer,
     spl_ed25519_signer_client::{ProgrammaticSigner, message::wrapped_message},
-    spl_legacy_message_executor_client::instruction::execute,
+    spl_message_executor_client::instruction::execute,
     std::collections::BTreeSet,
 };
 

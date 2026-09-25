@@ -1,7 +1,7 @@
 [package]
-name = "spl-legacy-message-executor-client"
+name = "spl-message-executor-client"
 version = "0.1.0"
-description = "Off-chain client helpers for the SPL Legacy Message Executor program"
+description = "Off-chain client helpers for the SPL Message Executor program"
 authors = { workspace = true }
 repository = { workspace = true }
 homepage = { workspace = true }
@@ -18,5 +18,5 @@ workspace = true
 solana-address = { workspace = true }
 solana-instruction = { workspace = true, features = ["wincode"] }
 solana-message = { workspace = true }
-spl-legacy-message-executor-interface = { workspace = true }
+spl-message-executor-interface = { workspace = true }
 spl-nonce-interface = { workspace = true }

@@ -69,8 +69,8 @@ wincode = { version = "0.5.5", default-features = false }
 
 spl-ed25519-signer-client = { path = "signer/client" }
 spl-ed25519-signer-interface = { path = "signer/interface" }
-spl-legacy-message-executor-client = { path = "executor/client" }
-spl-legacy-message-executor-interface = { path = "executor/interface" }
+spl-message-executor-client = { path = "executor/client" }
+spl-message-executor-interface = { path = "executor/interface" }
 spl-nonce-client = { path = "nonce/client" }
 spl-nonce-interface = { path = "nonce/interface" }
 

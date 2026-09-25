@@ -14,7 +14,7 @@ use {
     solana_message::{MessageHeader, compiled_instruction::CompiledInstruction, legacy},
     solana_program_error::ProgramError,
     solana_system_interface::instruction::transfer,
-    spl_legacy_message_executor_interface::{
+    spl_message_executor_interface::{
         error::Error as MessageExecutorError, instruction::derive_transition_commitment,
     },
     spl_nonce_client::instruction::advance,

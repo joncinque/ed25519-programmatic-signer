@@ -4,7 +4,7 @@ use {
     pinocchio::{AccountView, error::ProgramError},
     solana_message::legacy,
     solana_sanitize::Sanitize,
-    spl_legacy_message_executor_interface::error::Error,
+    spl_message_executor_interface::error::Error,
 };
 
 pub fn validate_wrapped_message(wrapped_message: &legacy::Message) -> Result<(), ProgramError> {

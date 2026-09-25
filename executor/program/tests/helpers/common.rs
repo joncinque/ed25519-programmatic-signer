@@ -6,8 +6,8 @@ use {
 
 pub fn init_mollusk() -> Mollusk {
     let mut mollusk = Mollusk::new(
-        &spl_legacy_message_executor_interface::id(),
-        "spl_legacy_message_executor_program",
+        &spl_message_executor_interface::id(),
+        "spl_message_executor_program",
     );
     mollusk.add_program(&spl_nonce_interface::id(), "spl_nonce_program");
     mollusk

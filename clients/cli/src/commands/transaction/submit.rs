@@ -15,7 +15,7 @@ use {
     solana_signer::Signer,
     solana_transaction::Transaction,
     spl_ed25519_signer_client::ProgrammaticSigner,
-    spl_legacy_message_executor_interface::instruction::Instruction as ExecutorInstruction,
+    spl_message_executor_interface::instruction::Instruction as ExecutorInstruction,
     std::{
         collections::{BTreeMap, BTreeSet},
         fmt,
@@ -223,7 +223,7 @@ impl ExecuteAccounts {
         };
         ensure!(
             account_keys.get(usize::from(instruction.program_id_index))
-                == Some(&spl_legacy_message_executor_interface::id()),
+                == Some(&spl_message_executor_interface::id()),
             "expected an Executor Execute instruction"
         );
         let ExecutorInstruction::Execute(inner) =

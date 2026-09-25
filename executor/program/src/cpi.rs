@@ -6,7 +6,7 @@ use {
         instruction::{InstructionAccount, InstructionView},
     },
     solana_message::legacy,
-    spl_legacy_message_executor_interface::error::Error,
+    spl_message_executor_interface::error::Error,
 };
 
 pub fn invoke_instructions(

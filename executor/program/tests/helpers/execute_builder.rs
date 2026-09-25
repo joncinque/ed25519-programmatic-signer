@@ -11,7 +11,7 @@ use {
     solana_instruction::Instruction,
     solana_message::legacy,
     solana_program_error::ProgramError,
-    spl_legacy_message_executor_client::instruction::execute,
+    spl_message_executor_client::instruction::execute,
     spl_nonce_interface::state::Nonce,
 };
 

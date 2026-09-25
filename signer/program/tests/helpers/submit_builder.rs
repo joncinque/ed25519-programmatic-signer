@@ -247,7 +247,7 @@ impl<'a> SubmitBuilder<'a> {
         if key == solana_system_interface::program::id() {
             return mollusk_svm::program::keyed_account_for_system_program();
         }
-        if key == spl_legacy_message_executor_interface::id() {
+        if key == spl_message_executor_interface::id() {
             return stub_executor::keyed_account();
         }
         // Only the first authority's programmatic signer is prefunded. Promotion tests that

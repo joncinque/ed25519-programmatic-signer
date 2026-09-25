@@ -1,7 +1,7 @@
 [package]
-name = "spl-legacy-message-executor-interface"
+name = "spl-message-executor-interface"
 version = "0.1.0"
-description = "Interface for the SPL Legacy Message Executor program"
+description = "Interface for the SPL Message Executor program"
 authors = { workspace = true }
 repository = { workspace = true }
 homepage = { workspace = true }

@@ -7,7 +7,7 @@ use {
     wincode::{SchemaRead, SchemaWrite},
 };
 
-/// Instructions supported by the SPL Legacy Message Executor program.
+/// Instructions supported by the SPL Message Executor program.
 #[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
 #[wincode(tag_encoding = "u8")]
 #[cfg_attr(

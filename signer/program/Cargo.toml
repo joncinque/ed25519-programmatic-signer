@@ -23,7 +23,7 @@ pinocchio = { workspace = true, features = ["alloc", "cpi"] }
 solana-message = { workspace = true, features = ["wincode"] }
 solana-signature = { workspace = true }
 spl-ed25519-signer-interface = { workspace = true }
-spl-legacy-message-executor-interface = { workspace = true }
+spl-message-executor-interface = { workspace = true }
 
 [dev-dependencies]
 mollusk-svm = { workspace = true }

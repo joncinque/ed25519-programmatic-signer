@@ -2,7 +2,7 @@
 use codama_macros::CodamaErrors;
 use solana_program_error::ProgramError;
 
-/// Custom errors returned by the SPL Legacy Message Executor program.
+/// Custom errors returned by the SPL Message Executor program.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]
 #[cfg_attr(feature = "codama", derive(CodamaErrors))]

@@ -5,9 +5,7 @@ use {
     },
     pinocchio::{AccountView, ProgramResult, error::ProgramError},
     solana_message::legacy,
-    spl_legacy_message_executor_interface::{
-        error::Error, instruction::derive_transition_commitment,
-    },
+    spl_message_executor_interface::{error::Error, instruction::derive_transition_commitment},
     spl_nonce_interface::state::Nonce,
 };
 

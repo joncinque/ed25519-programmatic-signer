@@ -32,8 +32,8 @@ pub async fn setup_test_env() -> TestEnv {
         spl_ed25519_signer_client::id(),
     );
     genesis.add_program(
-        "spl_legacy_message_executor_program",
-        spl_legacy_message_executor_interface::id(),
+        "spl_message_executor_program",
+        spl_message_executor_interface::id(),
     );
     let (validator, payer) = genesis.start_async().await;
     let rpc = RpcClient::new_with_commitment(validator.rpc_url(), CommitmentConfig::processed());
