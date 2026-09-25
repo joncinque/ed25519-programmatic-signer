@@ -23,6 +23,7 @@ indoc = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 solana-account = { workspace = true }
+solana-account-decoder-client-types = { workspace = true }
 solana-address = { workspace = true }
 solana-clap-v3-utils = { workspace = true, features = ["agave-unstable-api"] }
 solana-cli-config = { workspace = true, features = ["agave-unstable-api"] }
@@ -50,8 +51,10 @@ wincode = { workspace = true }
 [dev-dependencies]
 libtest-mimic = { workspace = true }
 solana-instruction = { workspace = true }
+solana-program-pack = { workspace = true }
 solana-system-interface = { workspace = true, features = ["wincode"] }
 solana-test-validator = { workspace = true, features = ["dev-context-only-utils"] }
+spl-token-interface = { workspace = true }
 test-case = { workspace = true }
 tempfile = { workspace = true }
 

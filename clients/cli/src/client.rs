@@ -3,6 +3,7 @@ use {
     anyhow::{Context, Result, anyhow, bail},
     clap::ArgMatches,
     solana_account::Account,
+    solana_account_decoder_client_types::UiAccountEncoding,
     solana_address::Address,
     solana_clap_v3_utils::{
         input_parsers::{parse_url_or_moniker, signer::SignerSource},
@@ -13,7 +14,13 @@ use {
     solana_hash::Hash,
     solana_remote_wallet::remote_wallet::RemoteWalletManager,
     solana_rpc_client::nonblocking::rpc_client::RpcClient,
-    solana_rpc_client_types::config::RpcSendTransactionConfig,
+    solana_rpc_client_types::{
+        config::{
+            RpcSendTransactionConfig, RpcSimulateTransactionAccountsConfig,
+            RpcSimulateTransactionConfig,
+        },
+        response::RpcSimulateTransactionResult,
+    },
     solana_signer::Signer,
     solana_transaction::Transaction,
     spl_nonce_interface::state::Nonce,
@@ -115,6 +122,35 @@ impl Client {
             .value
             .with_context(|| format!("nonce account {address} was not found"))?;
         decode_nonce_account(address, account)
+    }
+
+    /// Simulate without verifying signatures, against the latest blockhash. With
+    /// `verbose_accounts`, also requests the inner instructions and the post-simulation state of
+    /// those accounts.
+    pub(crate) async fn simulate_transaction(
+        &self,
+        transaction: &Transaction,
+        verbose_accounts: Option<&[Address]>,
+    ) -> Result<RpcSimulateTransactionResult> {
+        let accounts = verbose_accounts.map(|addresses| RpcSimulateTransactionAccountsConfig {
+            encoding: Some(UiAccountEncoding::JsonParsed),
+            addresses: addresses.iter().map(ToString::to_string).collect(),
+        });
+        self.rpc
+            .simulate_transaction_with_config(
+                transaction,
+                RpcSimulateTransactionConfig {
+                    sig_verify: false,
+                    replace_recent_blockhash: true,
+                    commitment: Some(self.rpc.commitment()),
+                    accounts,
+                    inner_instructions: verbose_accounts.is_some(),
+                    ..RpcSimulateTransactionConfig::default()
+                },
+            )
+            .await
+            .map(|response| response.value)
+            .context("failed to simulate transaction")
     }
 
     pub(crate) async fn send_and_confirm_transaction(

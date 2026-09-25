@@ -16,17 +16,17 @@ use {
 };
 
 const INITIAL_BALANCE: u64 = 10_000_000;
-const TRANSFER_AMOUNT: u64 = 1_000_000;
+pub(crate) const TRANSFER_AMOUNT: u64 = 1_000_000;
 
 /// A funded recipient and a nonce account whose value the inner message uses as its blockhash.
-struct SubmitTest {
-    recipient: Address,
-    nonce_account: Address,
-    nonce: Hash,
+pub(crate) struct SubmitTest {
+    pub(crate) recipient: Address,
+    pub(crate) nonce_account: Address,
+    pub(crate) nonce: Hash,
 }
 
 impl SubmitTest {
-    async fn new(env: &TestEnv, nonce_authority: &Address) -> Self {
+    pub(crate) async fn new(env: &TestEnv, nonce_authority: &Address) -> Self {
         let recipient = Keypair::new().pubkey();
         fund(env, &[recipient]).await;
         let create = run_psigner(&[
@@ -48,7 +48,7 @@ impl SubmitTest {
     }
 
     /// An inner message transferring from each sender to the recipient.
-    fn inner(&self, senders: &[Address]) -> Message {
+    pub(crate) fn inner(&self, senders: &[Address]) -> Message {
         let transfers = senders
             .iter()
             .map(|sender| transfer(sender, &self.recipient, TRANSFER_AMOUNT))
@@ -56,7 +56,7 @@ impl SubmitTest {
         Message::new_with_blockhash(&transfers, Some(&senders[0]), &self.nonce)
     }
 
-    async fn assert_received(&self, env: &TestEnv, transfers: u64) {
+    pub(crate) async fn assert_received(&self, env: &TestEnv, transfers: u64) {
         assert_eq!(
             env.rpc.get_balance(&self.recipient).await.unwrap(),
             INITIAL_BALANCE
@@ -66,7 +66,7 @@ impl SubmitTest {
     }
 }
 
-async fn fund(env: &TestEnv, addresses: &[Address]) {
+pub(crate) async fn fund(env: &TestEnv, addresses: &[Address]) {
     let instructions = addresses
         .iter()
         .map(|address| transfer(&env.payer.pubkey(), address, INITIAL_BALANCE))
