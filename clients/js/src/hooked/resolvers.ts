@@ -19,30 +19,30 @@ type V1CompiledTransactionMessage = Extract<CompiledTransactionMessage, { versio
 const compiledMessageDecoder = createDecoderThatConsumesEntireByteArray(getCompiledTransactionMessageDecoder());
 
 /**
- * Resolves the remaining `Execute` accounts from the wrapped message's static account list.
+ * Resolves the remaining `Execute` accounts from the execution message's static account list.
  * Accounts keep the order and permissions they would have in a normal Solana transaction.
  * Throws for a message that is not v1, which the executor rejects.
  *
  * Mirrors `executor/client/src/instruction.rs`.
  */
-export const resolveMessageAccounts = (scope: MessageAccountsResolverScope): AccountMeta[] => {
-    const message = decodeV1Message(scope.args.message, 'The message executor only supports v1 inner messages');
+export const resolveExecutionMessageAccounts = (scope: MessageAccountsResolverScope): AccountMeta[] => {
+    const message = decodeV1Message(scope.args.message, 'The message executor only supports v1 execution messages');
     return getStaticAccountMetas(message);
 };
 
 /**
- * Resolves the remaining `Submit` accounts from the wrapped message's static account list.
- * Account order and writable privileges match the wrapped message, while signer privileges are
- * removed because the wrapped signers are not signers of the outer transaction.
+ * Resolves the remaining `Submit` accounts from the authorization message's static account list.
+ * Account order and writable privileges match the authorization message, while signer privileges
+ * are removed because the authorization message's signers do not sign the relay transaction.
  * Throws for a message that is not v1, which the signer program rejects.
  *
  * Mirrors `signer/client/src/instruction.rs`.
  */
-export const resolveSubmitMessageAccounts = (scope: MessageAccountsResolverScope): AccountMeta[] => {
-    const message = decodeV1Message(scope.args.message, 'The signer program only supports v1 wrapped messages');
+export const resolveAuthorizationMessageAccounts = (scope: MessageAccountsResolverScope): AccountMeta[] => {
+    const message = decodeV1Message(scope.args.message, 'The signer program only supports v1 authorization messages');
     return getStaticAccountMetas(message).map(account => ({
         ...account,
-        // Wrapped signatures authorize the wrapped message, not the outer transaction that submits it.
+        // Authority signatures cover the authorization message, not the relay transaction that submits it.
         role: downgradeRoleToNonSigner(account.role),
     }));
 };

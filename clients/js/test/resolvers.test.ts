@@ -146,7 +146,7 @@ const expectedSubmitAccounts = [
 ];
 
 describe('remaining account resolvers', () => {
-    it('resolves account order and permissions for a v1 message', () => {
+    it('resolves account order and permissions for a v1 execution message', () => {
         expect(getExecuteAccounts(getTestMessage(1))).toEqual([
             { address: NONCE_AUTHORITY.address, role: AccountRole.READONLY_SIGNER, signer: NONCE_AUTHORITY },
             { address: NONCE_ACCOUNT, role: AccountRole.WRITABLE },
@@ -155,19 +155,19 @@ describe('remaining account resolvers', () => {
         ]);
     });
 
-    it('removes signer privileges from a submitted v1 message', () => {
+    it('removes signer privileges from a v1 authorization message', () => {
         expect(getSubmitAccounts(getTestMessage(1))).toEqual(expectedSubmitAccounts);
     });
 
-    it.each(UNSUPPORTED_MESSAGE_VERSIONS)('rejects a %s inner message', (version, label) => {
+    it.each(UNSUPPORTED_MESSAGE_VERSIONS)('rejects a %s execution message', (version, label) => {
         expect(() => getExecuteAccounts(getTestMessage(version))).toThrow(
-            `The message executor only supports v1 inner messages, got a ${label} message`,
+            `The message executor only supports v1 execution messages, got a ${label} message`,
         );
     });
 
-    it.each(UNSUPPORTED_MESSAGE_VERSIONS)('rejects a submitted %s message', (version, label) => {
+    it.each(UNSUPPORTED_MESSAGE_VERSIONS)('rejects a %s authorization message', (version, label) => {
         expect(() => getSubmitAccounts(getTestMessage(version))).toThrow(
-            `The signer program only supports v1 wrapped messages, got a ${label} message`,
+            `The signer program only supports v1 authorization messages, got a ${label} message`,
         );
     });
 
@@ -211,7 +211,7 @@ describe('remaining account resolvers', () => {
         });
     });
 
-    it('rejects trailing bytes after a compiled message', () => {
+    it('rejects trailing bytes after an execution message', () => {
         const message = encodeMessage(getTestMessage(1));
 
         expect(() =>
@@ -228,7 +228,7 @@ describe('remaining account resolvers', () => {
         );
     });
 
-    it('rejects trailing bytes after a submitted message', () => {
+    it('rejects trailing bytes after an authorization message', () => {
         const message = encodeMessage(getTestMessage(1));
 
         expect(() =>

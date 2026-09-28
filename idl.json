@@ -90,7 +90,7 @@
             ],
             "value": {
               "kind": "resolverValueNode",
-              "name": "resolveSubmitMessageAccounts",
+              "name": "resolveAuthorizationMessageAccounts",
               "docs": [
                 "Preserves each authorization message account's writable role without marking it as a relay transaction signer."
               ],
@@ -297,7 +297,7 @@
               ],
               "value": {
                 "kind": "resolverValueNode",
-                "name": "resolveMessageAccounts",
+                "name": "resolveExecutionMessageAccounts",
                 "docs": [
                   "Preserves each execution message account's signer and writable role."
                 ],

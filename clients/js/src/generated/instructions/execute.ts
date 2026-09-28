@@ -39,7 +39,7 @@ import {
     type ResolvedInstructionAccount,
     type ResolvedInstructionAccountMeta,
 } from '@solana/kit/program-client-core';
-import { resolveMessageAccounts } from '../../hooked';
+import { resolveExecutionMessageAccounts } from '../../hooked';
 import { MESSAGE_EXECUTOR_PROGRAM_ADDRESS } from '../programs';
 
 export const EXECUTE_DISCRIMINATOR = 0;
@@ -147,7 +147,7 @@ export function getExecuteInstruction<
     }
 
     // Remaining accounts.
-    const remainingAccounts: AccountMeta[] = resolveMessageAccounts(resolverScope);
+    const remainingAccounts: AccountMeta[] = resolveExecutionMessageAccounts(resolverScope);
 
     return Object.freeze({
         accounts: [

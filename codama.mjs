@@ -7,7 +7,7 @@ import {
 } from 'codama';
 
 const executeRemainingAccounts = instructionRemainingAccountsNode(
-    resolverValueNode('resolveMessageAccounts', {
+    resolverValueNode('resolveExecutionMessageAccounts', {
         dependsOn: [argumentValueNode('message')],
         docs: "Preserves each execution message account's signer and writable role.",
     }),
@@ -20,7 +20,7 @@ const executeRemainingAccounts = instructionRemainingAccountsNode(
 );
 
 const submitRemainingAccounts = instructionRemainingAccountsNode(
-    resolverValueNode('resolveSubmitMessageAccounts', {
+    resolverValueNode('resolveAuthorizationMessageAccounts', {
         dependsOn: [argumentValueNode('message')],
         docs: "Preserves each authorization message account's writable role without marking it as a relay transaction signer.",
     }),
