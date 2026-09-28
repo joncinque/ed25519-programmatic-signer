@@ -19,11 +19,11 @@ pub enum Error {
         codama(error(message = "The v1 message fails sanitization or contains duplicate keys"))
     )]
     InvalidMessage = 1,
-    /// The passed accounts do not match the wrapped message's account keys.
+    /// The passed accounts do not match the execution message's account keys.
     #[cfg_attr(
         feature = "codama",
         codama(error(
-            message = "The passed accounts do not match the wrapped message's account keys"
+            message = "The passed accounts do not match the execution message's account keys"
         ))
     )]
     MessageAccountsMismatch = 2,
@@ -33,17 +33,17 @@ pub enum Error {
         codama(error(message = "The message's recent blockhash does not match the stored nonce"))
     )]
     NonceMismatch = 3,
-    /// The wrapped message is not a v1 message.
+    /// The execution message is not a v1 message.
     #[cfg_attr(
         feature = "codama",
-        codama(error(message = "The wrapped message is not a v1 message"))
+        codama(error(message = "The execution message is not a v1 message"))
     )]
     UnsupportedMessageVersion = 4,
-    /// The wrapped message sets transaction config fields, which only apply to top-level
+    /// The execution message sets transaction config fields, which only apply to top-level
     /// transactions.
     #[cfg_attr(
         feature = "codama",
-        codama(error(message = "The wrapped message sets transaction config fields"))
+        codama(error(message = "The execution message sets transaction config fields"))
     )]
     UnsupportedTransactionConfig = 5,
 }

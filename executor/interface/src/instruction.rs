@@ -16,29 +16,31 @@ use {
     codama(enum_discriminator(size = number(u8)))
 )]
 pub enum Instruction {
-    /// Executes a wrapped message by invoking each of its instructions via CPI, consuming a nonce
-    /// for replay protection. This program is intended to be invoked after a signer program has
-    /// verified signatures and promoted any authorized PDAs to signer.
+    /// Invokes each instruction of an execution message via CPI, consuming a nonce for replay
+    /// protection. The execution message is a v1 message whose recent blockhash field holds the
+    /// nonce value. This program is intended to be invoked after a signer program has verified
+    /// signatures and promoted any authorized PDAs to signer.
     ///
-    /// Instruction data: the discriminator followed by a serialized [`VersionedMessage`], including
-    /// its version prefix. Only [`v1::Message`](solana_message::v1::Message) is supported.
+    /// Instruction data: the discriminator followed by the execution message, serialized as a
+    /// [`VersionedMessage`] including its version prefix. Only
+    /// [`v1::Message`](solana_message::v1::Message) is supported.
     ///
     /// On success, the program:
-    /// 1. Deserializes the wrapped message and verifies that it is a sanitized v1 message with an
-    ///    empty transaction config, since config fields only apply to top-level transactions.
+    /// 1. Deserializes the execution message and verifies that it is a sanitized v1 message with
+    ///    an empty transaction config, since config fields only apply to top-level transactions.
     /// 2. Verifies that the message's recent blockhash matches the nonce account's stored nonce.
     /// 3. Verifies that each supplied account matches the message account at the same index.
     /// 4. Advances the nonce via CPI to the Nonce program, which validates the authority signer.
     /// 5. Executes each message instruction via CPI. All changes roll back on failure.
     ///
     /// Accounts required:
-    /// - `[signer]` Nonce authority, independent of the wrapped message accounts
+    /// - `[signer]` Nonce authority
     /// - `[writable]` Nonce account to advance
     /// - `[]` SPL Nonce program
-    /// - Message accounts referenced by the wrapped message, in order
+    /// - Message accounts referenced by the execution message, in order
     #[cfg_attr(
         feature = "codama",
-        codama(display(intent = "Execute all instructions in a wrapped message")),
+        codama(display(intent = "Execute all instructions in an execution message")),
         codama(account(
             name = "nonce_authority",
             signer,
@@ -63,13 +65,13 @@ pub enum Instruction {
             feature = "codama",
             codama(name = "message"),
             codama(type = bytes),
-            codama(display(label = "Wrapped message"))
+            codama(display(label = "Execution message"))
         )]
         VersionedMessage,
     ),
 }
 
-/// Derives the transition commitment for a wrapped message as SHA-256 of its wire encoding.
+/// Derives the transition commitment for an execution message as SHA-256 of its wire encoding.
 /// Each nonce advancement commits to the exact message executed, so altering a message
 /// invalidates every successor precomputed from the original.
 pub fn derive_transition_commitment(message: &VersionedMessage) -> Hash {
@@ -105,7 +107,7 @@ mod tests {
     }
 
     #[test]
-    fn execute_message_keeps_version_prefix() {
+    fn execute_keeps_message_version_prefix() {
         // Clients decode the message bytes as a standard wire message, which needs the prefix.
         let bytes = wincode::serialize(&Instruction::Execute(VersionedMessage::V1(
             v1::Message::default(),

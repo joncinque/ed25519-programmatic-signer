@@ -34,10 +34,10 @@ if (process.env['NODE_ENV'] !== 'production') {
     messageExecutorErrorMessages = {
         [MESSAGE_EXECUTOR_ERROR__INVALID_MESSAGE]: `The v1 message fails sanitization or contains duplicate keys`,
         [MESSAGE_EXECUTOR_ERROR__INVALID_NONCE_ACCOUNT]: `The nonce account data could not be decoded as nonce state`,
-        [MESSAGE_EXECUTOR_ERROR__MESSAGE_ACCOUNTS_MISMATCH]: `The passed accounts do not match the wrapped message's account keys`,
+        [MESSAGE_EXECUTOR_ERROR__MESSAGE_ACCOUNTS_MISMATCH]: `The passed accounts do not match the execution message's account keys`,
         [MESSAGE_EXECUTOR_ERROR__NONCE_MISMATCH]: `The message's recent blockhash does not match the stored nonce`,
-        [MESSAGE_EXECUTOR_ERROR__UNSUPPORTED_MESSAGE_VERSION]: `The wrapped message is not a v1 message`,
-        [MESSAGE_EXECUTOR_ERROR__UNSUPPORTED_TRANSACTION_CONFIG]: `The wrapped message sets transaction config fields`,
+        [MESSAGE_EXECUTOR_ERROR__UNSUPPORTED_MESSAGE_VERSION]: `The execution message is not a v1 message`,
+        [MESSAGE_EXECUTOR_ERROR__UNSUPPORTED_TRANSACTION_CONFIG]: `The execution message sets transaction config fields`,
     };
 }
 

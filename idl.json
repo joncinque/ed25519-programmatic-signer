@@ -272,7 +272,7 @@
               },
               "display": {
                 "kind": "structFieldDisplayNode",
-                "label": "Wrapped message"
+                "label": "Execution message"
               }
             }
           ],
@@ -285,7 +285,7 @@
           ],
           "display": {
             "kind": "instructionDisplayNode",
-            "intent": "Execute all instructions in a wrapped message"
+            "intent": "Execute all instructions in an execution message"
           },
           "remainingAccounts": [
             {
@@ -333,7 +333,7 @@
           "kind": "errorNode",
           "name": "messageAccountsMismatch",
           "code": 2,
-          "message": "The passed accounts do not match the wrapped message's account keys"
+          "message": "The passed accounts do not match the execution message's account keys"
         },
         {
           "kind": "errorNode",
@@ -345,13 +345,13 @@
           "kind": "errorNode",
           "name": "unsupportedMessageVersion",
           "code": 4,
-          "message": "The wrapped message is not a v1 message"
+          "message": "The execution message is not a v1 message"
         },
         {
           "kind": "errorNode",
           "name": "unsupportedTransactionConfig",
           "code": 5,
-          "message": "The wrapped message sets transaction config fields"
+          "message": "The execution message sets transaction config fields"
         }
       ]
     },

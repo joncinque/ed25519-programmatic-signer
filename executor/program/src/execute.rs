@@ -1,7 +1,7 @@
 use {
     crate::{
         cpi::invoke_instructions,
-        validate::{validate_message_accounts, validate_wrapped_message},
+        validate::{validate_execution_message, validate_message_accounts},
     },
     pinocchio::{AccountView, ProgramResult, error::ProgramError},
     solana_message::VersionedMessage,
@@ -11,7 +11,7 @@ use {
 
 pub fn process_execute(
     accounts: &mut [AccountView],
-    wrapped_message: VersionedMessage,
+    execution_message: VersionedMessage,
 ) -> ProgramResult {
     let [
         nonce_authority_account,
@@ -32,7 +32,7 @@ pub fn process_execute(
     let nonce_data = nonce_account.try_borrow()?;
     let Nonce { nonce, .. } = Nonce::view(&nonce_data).map_err(|_| Error::InvalidNonceAccount)?;
 
-    let message = validate_wrapped_message(&wrapped_message)?;
+    let message = validate_execution_message(&execution_message)?;
 
     if &message.lifetime_specifier != nonce {
         return Err(Error::NonceMismatch.into());
@@ -50,7 +50,7 @@ pub fn process_execute(
         nonce_authority_account,
         nonce_account,
         current_nonce,
-        derive_transition_commitment(&wrapped_message),
+        derive_transition_commitment(&execution_message),
     )?;
 
     invoke_instructions(message_accounts, message)

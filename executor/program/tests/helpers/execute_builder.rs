@@ -25,7 +25,7 @@ pub struct ExecuteBuilder<'a> {
     nonce_account: Option<(Address, Account)>,
     authority: Address,
     payer: Option<Address>,
-    inner_instructions: Vec<Instruction>,
+    message_instructions: Vec<Instruction>,
     recent_blockhash: Option<Hash>,
     message: Option<v1::Message>,
     message_mutations: Vec<MessageMutation>,
@@ -47,7 +47,7 @@ impl<'a> ExecuteBuilder<'a> {
             nonce_account: None,
             authority: DEFAULT_AUTHORITY,
             payer: None,
-            inner_instructions: vec![],
+            message_instructions: vec![],
             recent_blockhash: None,
             message: None,
             message_mutations: vec![],
@@ -72,8 +72,8 @@ impl<'a> ExecuteBuilder<'a> {
         self
     }
 
-    pub fn inner_instruction(mut self, instruction: Instruction) -> Self {
-        self.inner_instructions.push(instruction);
+    pub fn message_instruction(mut self, instruction: Instruction) -> Self {
+        self.message_instructions.push(instruction);
         self
     }
 
@@ -117,7 +117,7 @@ impl<'a> ExecuteBuilder<'a> {
             nonce_account: nonce_account_override,
             authority,
             payer,
-            inner_instructions,
+            message_instructions,
             recent_blockhash: recent_blockhash_override,
             message: message_override,
             message_mutations,
@@ -138,7 +138,7 @@ impl<'a> ExecuteBuilder<'a> {
         let mut message = message_override.unwrap_or_else(|| {
             v1::Message::try_compile(
                 payer.as_ref().unwrap_or(&authority),
-                &inner_instructions,
+                &message_instructions,
                 recent_blockhash,
             )
             .unwrap()

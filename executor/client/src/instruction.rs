@@ -12,7 +12,7 @@ pub fn execute(
     nonce_authority: &Address,
     message: &v1::Message,
 ) -> Instruction {
-    // Fixed accounts for consuming the nonce, followed by the wrapped message's accounts
+    // Fixed accounts for consuming the nonce, followed by the execution message's accounts
     let mut accounts = Vec::with_capacity(message.account_keys.len().saturating_add(3));
     accounts.push(AccountMeta::new_readonly(*nonce_authority, true));
     accounts.push(AccountMeta::new(*nonce_account, false));

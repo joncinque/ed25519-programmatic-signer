@@ -11,10 +11,10 @@ use {
 
 pub fn invoke_instructions(
     message_accounts: &[AccountView],
-    wrapped_message: &v1::Message,
+    execution_message: &v1::Message,
 ) -> ProgramResult {
     // Allocate once for the largest instruction and reuse across the execution
-    let max_instruction_accounts = wrapped_message
+    let max_instruction_accounts = execution_message
         .instructions
         .iter()
         .map(|ix| ix.accounts.len())
@@ -24,7 +24,7 @@ pub fn invoke_instructions(
     let mut account_views = Vec::with_capacity(max_instruction_accounts);
 
     // Invoke each instruction via CPI
-    for ix in &wrapped_message.instructions {
+    for ix in &execution_message.instructions {
         instruction_accounts.clear();
         account_views.clear();
 
@@ -39,9 +39,9 @@ pub fn invoke_instructions(
             let message_account = message_accounts
                 .get(account_index)
                 .ok_or(Error::InvalidMessage)?;
-            let is_writable = wrapped_message
+            let is_writable = execution_message
                 .is_maybe_writable_with_reserved_addresses(account_index, None::<&BTreeSet<_>>);
-            let is_signer = wrapped_message.is_signer(account_index);
+            let is_signer = execution_message.is_signer(account_index);
 
             instruction_accounts.push(InstructionAccount::new(
                 message_account.address(),
