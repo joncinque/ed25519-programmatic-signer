@@ -31,7 +31,7 @@ fn submit_rejects_no_required_signatures() {
     init_mollusk().process_and_validate_instruction(
         &ix,
         &[],
-        &[Check::err(Error::InvalidWrappedMessage.into())],
+        &[Check::err(Error::InvalidMessage.into())],
     );
 }
 
@@ -49,7 +49,7 @@ fn submit_rejects_mismatched_signature_count(mutation: fn(&mut VersionedTransact
 fn submit_rejects_out_of_bounds_instruction_index(mutation: fn(&mut v1::Message)) {
     SubmitBuilder::default_transfer()
         .mutate_message(mutation)
-        .check_err(Error::InvalidWrappedMessage)
+        .check_err(Error::InvalidMessage)
         .execute();
 }
 
@@ -93,7 +93,7 @@ fn submit_rejects_account_key_mismatch() {
         .execute();
 }
 
-// Any post-signing change to the signed message must fail signature verification
+// Any post-signing change to the authorization message must fail signature verification
 #[test_case(|msg| *msg.account_keys.last_mut().unwrap() = Address::new_unique(); "account key")]
 #[test_case(|msg| msg.lifetime_specifier = Hash::new_from_array([99; 32]); "lifetime specifier")]
 #[test_case(|msg| msg.instructions[0].accounts[1] = msg.instructions[0].accounts[0]; "executor account index")]
@@ -154,8 +154,8 @@ fn submit_rejects_disallowed_executor_instruction() {
 }
 
 #[test]
-fn submit_rejects_outer_writable_undergrant() {
-    // The relayer demotes the promoted programmatic signer to readonly in the outer
+fn submit_rejects_relay_writable_undergrant() {
+    // The relayer demotes the promoted programmatic signer to readonly in the relay
     // accounts. The CPI still needs it writable, so the runtime blocks the escalation.
     let authority = Keypair::new();
     let programmatic_signer = ProgrammaticSigner::derive_address(
@@ -199,9 +199,9 @@ fn submit_does_not_promote_unrelated_accounts() {
 }
 
 #[test]
-fn submit_does_not_forward_unrequired_outer_signer_privilege() {
-    // Outer signer privilege is forwarded only when the wrapped message also marks that
-    // account as a required signer.
+fn submit_does_not_forward_unrequired_relay_signer_privilege() {
+    // Relay transaction signer privilege is forwarded only when the authorization message also
+    // marks that account as a required signer.
     let real_signer = Keypair::new();
     let real_signer_key = real_signer.pubkey();
     let recipient = Address::new_unique();
@@ -226,15 +226,15 @@ fn submit_does_not_forward_unrequired_outer_signer_privilege() {
 }
 
 #[test]
-fn submit_does_not_forward_outer_writable_overgrant() {
-    // The signed message marks the recipient readonly. A relayer granting it writable in
-    // the outer accounts must not leak that privilege into the CPI.
+fn submit_does_not_forward_relay_writable_overgrant() {
+    // The authorization message marks the recipient readonly. A relayer granting it writable
+    // in the relay accounts must not leak that privilege into the CPI.
     let recipient = Address::new_unique();
     SubmitBuilder::default_transfer()
         .recipient(recipient)
         .mutate_message(|msg| {
             // The recipient is the last unsigned key, so adding one readonly unsigned account
-            // marks it readonly in the signed message.
+            // marks it readonly in the authorization message.
             msg.header.num_readonly_unsigned_accounts =
                 msg.header.num_readonly_unsigned_accounts.saturating_add(1);
         })
@@ -256,7 +256,7 @@ fn submit_does_not_forward_outer_writable_overgrant() {
 fn submit_promotes_programmatic_signer() {
     let result = SubmitBuilder::default_transfer().execute();
 
-    // Success comes from PDA promotion, not outer signer privilege
+    // Success comes from PDA promotion, not relay transaction signer privilege
     let programmatic_signer_meta = result
         .instruction
         .accounts
@@ -315,8 +315,8 @@ fn submit_promotes_multiple_authorities() {
 }
 
 #[test]
-fn submit_forwards_required_outer_signer_privilege() {
-    // The authority signs the wrapped message and the outer transaction, so its signer
+fn submit_forwards_required_relay_signer_privilege() {
+    // The authority signs the authorization message and the relay transaction, so its signer
     // privilege forwards into the executor CPI.
     let authority = Keypair::new();
     let authority_key = authority.pubkey();
@@ -333,7 +333,7 @@ fn submit_forwards_required_outer_signer_privilege() {
                 .iter()
                 .position(|meta| meta.pubkey == authority_key)
                 .unwrap();
-            // mollusk simulates an outer transaction signature with the account meta signer flag
+            // mollusk simulates a relay transaction signature with the account meta signer flag
             ix.accounts[authority_index].is_signer = true;
         })
         .execute();
@@ -533,7 +533,7 @@ fn submit_rejects_duplicate_account_keys() {
             let duplicate = msg.account_keys[1];
             *msg.account_keys.last_mut().unwrap() = duplicate;
         })
-        .check_err(Error::InvalidWrappedMessage)
+        .check_err(Error::InvalidMessage)
         .execute();
 }
 

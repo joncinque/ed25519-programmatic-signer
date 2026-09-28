@@ -11,7 +11,8 @@ pub fn install(mollusk: &mut Mollusk) {
     mollusk.add_program(&spl_message_executor_interface::id(), NAME);
 }
 
-/// Wraps an inner instruction in the stub format: discriminator, instruction, and program account.
+/// Wraps an instruction for the stub to invoke, in the stub format: discriminator, instruction,
+/// and program account.
 pub fn wrap(instruction: Instruction) -> Instruction {
     let mut data = vec![0];
     data.extend(wincode::serialize(&instruction).unwrap());

@@ -13,7 +13,7 @@ use {
     solana_hash::Hash,
     solana_message::{VersionedMessage, v1},
     solana_signer::Signer,
-    spl_ed25519_signer_client::{ProgrammaticSigner, message::wrapped_message},
+    spl_ed25519_signer_client::{ProgrammaticSigner, message::authorization_message},
     spl_message_executor_client::instruction::execute,
     std::{collections::BTreeSet, fmt},
 };
@@ -93,7 +93,7 @@ pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -
         .into_iter()
         .collect::<Vec<_>>();
     // Every authority is a wrapped signer, so this also bounds the wrapped message's account keys
-    // well below the 256 at which wrapped_message panics compiling u8 indexes. Check it before
+    // well below the 256 at which authorization_message panics compiling u8 indexes. Check it before
     // building the message.
     ensure!(
         wrapped_signers.len() <= usize::from(v1::MAX_SIGNATURES),
@@ -109,8 +109,8 @@ pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -
              signer on the inner message"
         );
     }
-    let VersionedMessage::V1(outer) = wrapped_message(&instruction, &wrapped_signers) else {
-        unreachable!("wrapped_message builds a v1 message");
+    let VersionedMessage::V1(outer) = authorization_message(&instruction, &wrapped_signers) else {
+        unreachable!("authorization_message builds a v1 message");
     };
     // Validate the v1 message directly. Its errors name the violated limit, which sanitize's
     // generic errors do not.

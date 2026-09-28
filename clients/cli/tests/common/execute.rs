@@ -3,7 +3,7 @@ use {
     solana_address::Address,
     solana_message::{VersionedMessage, v1},
     solana_signer::Signer,
-    spl_ed25519_signer_client::{ProgrammaticSigner, message::wrapped_message},
+    spl_ed25519_signer_client::{ProgrammaticSigner, message::authorization_message},
     spl_message_executor_client::instruction::execute,
     std::collections::BTreeSet,
 };
@@ -35,7 +35,7 @@ pub fn execute_message(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    wrapped_message(&execute(nonce_account, nonce_authority, inner), &signers)
+    authorization_message(&execute(nonce_account, nonce_authority, inner), &signers)
 }
 
 pub fn encode(message: &VersionedMessage) -> String {

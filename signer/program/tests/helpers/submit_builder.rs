@@ -10,7 +10,7 @@ use {
     solana_signer::Signer as _,
     solana_system_interface::instruction::transfer,
     solana_transaction::versioned::VersionedTransaction,
-    spl_ed25519_signer_client::{instruction::submit, message::wrapped_message},
+    spl_ed25519_signer_client::{instruction::submit, message::authorization_message},
     spl_ed25519_signer_interface::pda::ProgrammaticSigner,
 };
 
@@ -33,7 +33,7 @@ struct SubmitContext {
     recipient: Address,
 }
 
-/// Builds, signs, and submits a wrapped transaction through Mollusk.
+/// Builds and signs an authorization message, then submits it through Mollusk.
 ///
 /// A stub at the allowed executor address forwards to the system program.  A transfer from the
 /// promoted `ProgrammaticSigner` consumes the promotion, so success proves the verify, promote, and
@@ -102,13 +102,13 @@ impl<'a> SubmitBuilder<'a> {
         self
     }
 
-    /// Mutates the wrapped message before signing, so the authorities sign the change.
+    /// Mutates the authorization message before signing, so the authorities sign the change.
     pub fn mutate_message(mut self, mutation: impl FnOnce(&mut v1::Message) + 'static) -> Self {
         self.message_mutations.push(Box::new(mutation));
         self
     }
 
-    /// Tampers with the wrapped message after signing, so signatures no longer cover it.
+    /// Tampers with the authorization message after signing, so signatures no longer cover it.
     pub fn tamper_message(mut self, tamper: impl FnOnce(&mut v1::Message) + 'static) -> Self {
         self.message_tampers.push(Box::new(tamper));
         self
@@ -123,7 +123,7 @@ impl<'a> SubmitBuilder<'a> {
         self
     }
 
-    /// Mutates the outer `Submit` instruction the relayer sends.
+    /// Mutates the `Submit` instruction in the relay transaction.
     pub fn mutate_submit_ix(
         mut self,
         mutation: impl FnOnce(&mut SolanaInstruction) + 'static,
@@ -152,20 +152,20 @@ impl<'a> SubmitBuilder<'a> {
         let message = match self.message_override.take() {
             Some(message) => message,
             None => {
-                let inner_executor_instruction =
-                    self.executor_instruction.take().unwrap_or_else(|| {
-                        transfer(
-                            &context.programmatic_signer,
-                            &context.recipient,
-                            DEFAULT_TRANSFER_LAMPORTS,
-                        )
-                    });
-                let mut executor_instruction = stub_executor::wrap(inner_executor_instruction);
+                let cpi_instruction = self.executor_instruction.take().unwrap_or_else(|| {
+                    transfer(
+                        &context.programmatic_signer,
+                        &context.recipient,
+                        DEFAULT_TRANSFER_LAMPORTS,
+                    )
+                });
+                let mut executor_instruction = stub_executor::wrap(cpi_instruction);
                 for mutation in self.executor_instruction_mutations.drain(..) {
                     mutation(&mut executor_instruction);
                 }
 
-                let mut message = wrapped_message(&executor_instruction, &context.authorities);
+                let mut message =
+                    authorization_message(&executor_instruction, &context.authorities);
                 let VersionedMessage::V1(v1_message) = &mut message else {
                     panic!("expected v1 message");
                 };
@@ -181,7 +181,7 @@ impl<'a> SubmitBuilder<'a> {
 
         if !self.message_tampers.is_empty() {
             let VersionedMessage::V1(msg) = &mut transaction.message else {
-                panic!("tamper_message requires a v1 wrapped message");
+                panic!("tamper_message requires a v1 authorization message");
             };
             for tamper in self.message_tampers.drain(..) {
                 tamper(msg);

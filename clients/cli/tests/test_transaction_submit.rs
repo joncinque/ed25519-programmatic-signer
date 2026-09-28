@@ -11,7 +11,7 @@ use {
     solana_message::{VersionedMessage, legacy, v1},
     solana_signer::Signer,
     solana_system_interface::instruction::transfer,
-    spl_ed25519_signer_client::message::wrapped_message,
+    spl_ed25519_signer_client::message::authorization_message,
     spl_message_executor_client::instruction::execute,
     spl_message_executor_interface::instruction::Instruction as ExecutorInstruction,
     std::{path::PathBuf, process::Output},
@@ -193,7 +193,7 @@ fn rejects_execute_message_the_signer_cannot_submit(
 #[test]
 fn rejects_non_executor_instruction() {
     let env = SubmitTestEnv::new();
-    let message = wrapped_message(
+    let message = authorization_message(
         &transfer(&env.authority.pubkey(), &Address::new_unique(), 1),
         &[env.authority.pubkey()],
     );
@@ -211,7 +211,7 @@ fn rejects_execute_without_nonce_accounts() {
         &ExecutorInstruction::Execute(VersionedMessage::V1(v1::Message::default())),
         vec![AccountMeta::new(Address::new_unique(), false)],
     );
-    let message = wrapped_message(&instruction, &[env.authority.pubkey()]);
+    let message = authorization_message(&instruction, &[env.authority.pubkey()]);
     assert_failure(
         &env.submit(&encode(&message), &[]),
         "expected the nonce authority, nonce account, and SPL Nonce program in Execute accounts",
@@ -238,7 +238,7 @@ fn rejects_inner_message_the_executor_cannot_invoke(inner: VersionedMessage, exp
         &ExecutorInstruction::Execute(inner),
         vec![AccountMeta::new(Address::new_unique(), false)],
     );
-    let message = wrapped_message(&instruction, &[env.authority.pubkey()]);
+    let message = authorization_message(&instruction, &[env.authority.pubkey()]);
     assert_failure(&env.submit(&encode(&message), &[]), expected);
 }
 
@@ -442,7 +442,7 @@ fn rejects_message_signer_unused_by_execute() {
     )
     .unwrap();
     // `transaction sign` never adds a signer the Execute instruction does not use.
-    let message = wrapped_message(
+    let message = authorization_message(
         &execute(&env.nonce_account, &signer, &inner),
         &[authority, unused],
     );

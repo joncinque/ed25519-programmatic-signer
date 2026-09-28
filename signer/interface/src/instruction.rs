@@ -36,17 +36,18 @@ pub enum Instruction {
     ///
     /// Trust assumptions:
     /// - This program validates authority signatures, accounts, flags, and executor identity.
-    /// - The inner signed message is an authorization envelope. Only its single executor
+    /// - The authorization message is only an envelope. Only its single executor
     ///   instruction is invoked.
     /// - Except for its discriminator, executor instruction data is opaque to this program.
     /// - This program is stateless. Replay protection belongs to the executor program.
     ///
     /// Accounts required:
-    /// - One account for each key in the wrapped message's `account_keys` list, in the same order.
-    ///   At every index, the submitted account key and writable flag must match the wrapped message.
+    /// - One account for each key in the authorization message's `account_keys` list, in the same
+    ///   order. At every index, the submitted account key and writable flag must match the
+    ///   authorization message.
     #[cfg_attr(
         feature = "codama",
-        codama(display(intent = "Verify wrapped message and invoke its executor"))
+        codama(display(intent = "Verify authorization message and invoke its executor"))
     )]
     Submit {
         #[wincode(with = "containers::Vec<Signature, u8>")]
@@ -59,7 +60,7 @@ pub enum Instruction {
         #[cfg_attr(
             feature = "codama",
             codama(type = bytes),
-            codama(display(label = "Signed message"))
+            codama(display(label = "Authorization message"))
         )]
         message: VersionedMessage,
     },

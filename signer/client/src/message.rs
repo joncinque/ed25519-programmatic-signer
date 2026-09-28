@@ -1,4 +1,4 @@
-//! Builder for the wrapped transaction message signed by authorities.
+//! Builder for the authorization message signed by authorities.
 
 use {
     alloc::vec::Vec,
@@ -9,7 +9,7 @@ use {
     solana_message::{AccountKeys, MessageHeader, VersionedMessage, v1},
 };
 
-/// Builds the wrapped v1 message that the authorities sign over the executor instruction.
+/// Builds the v1 authorization message that the authorities sign over the executor instruction.
 ///
 /// Callers must keep the inputs within the v1 limits of `v1::MAX_SIGNATURES` authorities and
 /// `v1::MAX_ADDRESSES` account keys. Larger inputs build a message that fails sanitization, and
@@ -32,9 +32,9 @@ use {
 /// ```
 ///
 /// The executor instruction's original `AccountMeta::is_signer` flags do not grant signer
-/// privilege. CPI signer privilege comes only from required outer signers and from
+/// privilege. CPI signer privilege comes only from required relay transaction signers and from
 /// `ProgrammaticSigner` PDA promotion.
-pub fn wrapped_message(
+pub fn authorization_message(
     executor_instruction: &Instruction,
     authorities: &[Address],
 ) -> VersionedMessage {
@@ -49,7 +49,7 @@ pub fn wrapped_message(
         });
 
     // Every message version requires at least one writable signer, the fee payer.
-    // A wrapped message pays no fees, so when the executor writes to no authority the first
+    // An authorization message pays no fees, so when the executor writes to no authority the first
     // one carries the writable flag anyway. The over-grant is benign. The flag does not grant
     // CPI signer privilege and a writable account without signer privilege accepts nothing
     // beyond lamport credits.
@@ -102,7 +102,7 @@ pub fn wrapped_message(
         num_readonly_unsigned_accounts: readonly_unsigned.len().saturating_add(1) as u8,
     };
 
-    // The wrapped message is never executed as a transaction, so it carries no transaction
+    // The authorization message is never executed as a transaction, so it carries no transaction
     // config and no lifetime.
     let message = v1::Message::new(
         header,

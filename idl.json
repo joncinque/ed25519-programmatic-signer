@@ -65,7 +65,7 @@
             },
             "display": {
               "kind": "structFieldDisplayNode",
-              "label": "Signed message"
+              "label": "Authorization message"
             }
           }
         ],
@@ -78,7 +78,7 @@
         ],
         "display": {
           "kind": "instructionDisplayNode",
-          "intent": "Verify wrapped message and invoke its executor"
+          "intent": "Verify authorization message and invoke its executor"
         },
         "remainingAccounts": [
           {
@@ -86,13 +86,13 @@
             "isOptional": false,
             "isSigner": false,
             "docs": [
-              "One account for each key in the wrapped message's static account-key list, in the same order."
+              "One account for each key in the authorization message's static account-key list, in the same order."
             ],
             "value": {
               "kind": "resolverValueNode",
               "name": "resolveSubmitMessageAccounts",
               "docs": [
-                "Preserves each wrapped message account's writable role without marking it as an outer Submit signer."
+                "Preserves each authorization message account's writable role without marking it as a relay transaction signer."
               ],
               "dependsOn": [
                 {
@@ -103,7 +103,7 @@
             },
             "display": {
               "kind": "instructionAccountDisplayNode",
-              "label": "Wrapped message accounts"
+              "label": "Authorization message accounts"
             }
           }
         ]
@@ -138,27 +138,27 @@
     "errors": [
       {
         "kind": "errorNode",
-        "name": "invalidWrappedMessage",
+        "name": "invalidMessage",
         "code": 0,
-        "message": "The wrapped message failed sanitization"
+        "message": "The authorization message failed sanitization"
       },
       {
         "kind": "errorNode",
         "name": "invalidExecutorInstructionCount",
         "code": 1,
-        "message": "The wrapped message must contain exactly one executor instruction"
+        "message": "The authorization message must contain exactly one executor instruction"
       },
       {
         "kind": "errorNode",
         "name": "accountKeyMismatch",
         "code": 2,
-        "message": "A Submit account differs from the wrapped message key at the same index"
+        "message": "A Submit account differs from the authorization message key at the same index"
       },
       {
         "kind": "errorNode",
         "name": "invalidSignature",
         "code": 3,
-        "message": "An authority signature failed verification against the wrapped message"
+        "message": "An authority signature failed verification against the authorization message"
       },
       {
         "kind": "errorNode",
@@ -170,19 +170,19 @@
         "kind": "errorNode",
         "name": "invalidSignatureCount",
         "code": 5,
-        "message": "The authority signature count does not match the wrapped message."
+        "message": "The authority signature count does not match the authorization message."
       },
       {
         "kind": "errorNode",
         "name": "unsupportedMessageVersion",
         "code": 6,
-        "message": "The wrapped message is not a v1 message"
+        "message": "The authorization message is not a v1 message"
       },
       {
         "kind": "errorNode",
         "name": "unsupportedTransactionConfig",
         "code": 7,
-        "message": "The wrapped message sets transaction config fields"
+        "message": "The authorization message sets transaction config fields"
       }
     ]
   },
@@ -293,13 +293,13 @@
               "isOptional": false,
               "isSigner": "either",
               "docs": [
-                "One account for each key in the wrapped message's static account-key list, in the same order."
+                "One account for each key in the execution message's static account-key list, in the same order."
               ],
               "value": {
                 "kind": "resolverValueNode",
                 "name": "resolveMessageAccounts",
                 "docs": [
-                  "Preserves each wrapped message account's signer and writable role."
+                  "Preserves each execution message account's signer and writable role."
                 ],
                 "dependsOn": [
                   {
@@ -310,7 +310,7 @@
               },
               "display": {
                 "kind": "instructionAccountDisplayNode",
-                "label": "Wrapped message accounts"
+                "label": "Execution message accounts"
               }
             }
           ]

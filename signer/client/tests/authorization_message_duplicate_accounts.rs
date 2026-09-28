@@ -1,7 +1,7 @@
 use {
     solana_address::Address,
     solana_instruction::{AccountMeta, Instruction},
-    spl_ed25519_signer_client::message::wrapped_message,
+    spl_ed25519_signer_client::message::authorization_message,
     std::collections::BTreeSet,
     test_case::test_case,
 };
@@ -20,7 +20,7 @@ fn repeated_account_preserves_writable_privilege_and_instruction_positions() {
         data: vec![],
     };
 
-    let message = wrapped_message(&instruction, &[authority]);
+    let message = authorization_message(&instruction, &[authority]);
     message.sanitize().unwrap();
     let compiled = &message.instructions()[0];
 
@@ -71,7 +71,7 @@ fn duplicate_privileges_are_merged_in_either_order(privileges: [bool; 2]) {
         ],
         data: vec![7, 8],
     };
-    let message = wrapped_message(&instruction, &[authority]);
+    let message = authorization_message(&instruction, &[authority]);
     message.sanitize().unwrap();
     let compiled = &message.instructions()[0];
     assert_eq!(compiled.accounts.len(), 3);
@@ -86,7 +86,7 @@ fn duplicate_privileges_are_merged_in_either_order(privileges: [bool; 2]) {
     assert_eq!(message.static_account_keys()[index], shared);
     assert!(
         !message.is_signer(index),
-        "input signer flags must not grant outer signer privilege"
+        "input signer flags must not grant authorization message signer privilege"
     );
     let should_be_writable = privileges.into_iter().any(|writable| writable);
     assert_eq!(
@@ -111,7 +111,7 @@ fn authority_and_program_references_reuse_existing_account_keys() {
         ],
         data: vec![],
     };
-    let message = wrapped_message(&instruction, &[readonly_authority, writable_authority]);
+    let message = authorization_message(&instruction, &[readonly_authority, writable_authority]);
     message.sanitize().unwrap();
     assert_eq!(
         message.static_account_keys(),
@@ -180,7 +180,7 @@ fn unaffected_message_without_authority_writes_preserves_serialized_bytes() {
             data: vec![11, 12],
         }],
     ));
-    let actual = wrapped_message(&instruction, &[first_authority, second_authority]);
+    let actual = authorization_message(&instruction, &[first_authority, second_authority]);
     actual.sanitize().unwrap();
     assert_eq!(actual.serialize(), expected.serialize());
 }
@@ -239,7 +239,7 @@ fn unaffected_message_with_authority_writes_preserves_serialized_bytes() {
             data: vec![11, 12],
         }],
     ));
-    let actual = wrapped_message(&instruction, &[first_authority, second_authority]);
+    let actual = authorization_message(&instruction, &[first_authority, second_authority]);
     actual.sanitize().unwrap();
     assert_eq!(actual.serialize(), expected.serialize());
 }
@@ -274,7 +274,7 @@ fn interleaved_duplicates_recompile_all_indices_and_preserve_privilege_order() {
         ],
         data: vec![42],
     };
-    let message = wrapped_message(&instruction, &[authority]);
+    let message = authorization_message(&instruction, &[authority]);
     message.sanitize().unwrap();
 
     // Writable keys retain first-writable-occurrence order, including a key first seen readonly.

@@ -10,7 +10,7 @@ use {
     solana_signature::Signature,
     solana_signer::Signer,
     solana_system_interface::instruction::transfer,
-    spl_ed25519_signer_client::{ProgrammaticSigner, message::wrapped_message},
+    spl_ed25519_signer_client::{ProgrammaticSigner, message::authorization_message},
     spl_message_executor_client::instruction::execute,
     spl_message_executor_interface::instruction::Instruction as ExecutorInstruction,
     std::{fs, str::FromStr},
@@ -110,7 +110,7 @@ impl SignTestEnv {
         let mut authorities = authorities.to_vec();
         authorities.sort_unstable();
         authorities.dedup();
-        wrapped_message(
+        authorization_message(
             &execute(
                 &self.nonce_account.parse().unwrap(),
                 &self.nonce_authority.parse().unwrap(),

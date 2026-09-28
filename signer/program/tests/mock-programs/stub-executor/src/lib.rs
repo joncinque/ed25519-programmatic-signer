@@ -24,7 +24,7 @@ nostd_panic_handler!();
 /// Test-only executor used by the signer program's tests.
 ///
 /// The first instruction-data byte is the allowed executor discriminator. The remaining bytes
-/// encode a single inner Solana instruction, which this program invokes through CPI.
+/// encode a single Solana instruction, which this program invokes through CPI.
 /// For simplicity, there's no replay protection.
 fn process_instruction(
     _program_id: &Address,
