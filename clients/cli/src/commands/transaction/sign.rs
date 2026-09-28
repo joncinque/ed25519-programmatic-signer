@@ -109,13 +109,12 @@ pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -
              signer on the inner message"
         );
     }
-    let outer = wrapped_message(&instruction, &wrapped_signers);
-    // Validate the v1 message directly. Its errors name the violated limit, which sanitize's
-    // generic errors do not.
-    let VersionedMessage::V1(wrapped_v1) = &outer else {
+    let VersionedMessage::V1(outer) = wrapped_message(&instruction, &wrapped_signers) else {
         unreachable!("wrapped_message builds a v1 message");
     };
-    wrapped_v1.validate().context("invalid wrapped message")?;
+    // Validate the v1 message directly. Its errors name the violated limit, which sanitize's
+    // generic errors do not.
+    outer.validate().context("invalid wrapped message")?;
     let execute_message = BASE64_STANDARD.encode(outer.serialize());
 
     let signers = if command.signer.is_empty() {

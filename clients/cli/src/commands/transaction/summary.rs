@@ -5,7 +5,7 @@ use {
     solana_message::{VersionedMessage, v1},
     solana_signature::Signature,
     solana_signer::Signer,
-    solana_transaction_status::{Encodable, EncodableWithMeta, UiTransactionEncoding},
+    solana_transaction_status::{Encodable, UiTransactionEncoding},
     spl_ed25519_signer_client::ProgrammaticSigner,
     std::io,
 };
@@ -14,7 +14,7 @@ use {
 /// signing.
 pub(super) fn render_signing_summary(
     inner: &v1::Message,
-    outer: &VersionedMessage,
+    outer: &v1::Message,
     nonce_account: &Address,
     nonce_authority: &Address,
     authorities: &[Address],
@@ -23,14 +23,7 @@ pub(super) fn render_signing_summary(
 ) -> Result<String> {
     let inner_json =
         serde_json::to_string_pretty(&inner.encode(UiTransactionEncoding::JsonParsed))?;
-    let (outer_version, outer_ui_message) = match outer {
-        VersionedMessage::Legacy(message) => {
-            ("Legacy", message.encode(UiTransactionEncoding::Json))
-        }
-        VersionedMessage::V0(message) => ("v0", message.json_encode()),
-        VersionedMessage::V1(message) => ("v1", message.encode(UiTransactionEncoding::Json)),
-    };
-    let outer_json = serde_json::to_string_pretty(&outer_ui_message)?;
+    let outer_json = serde_json::to_string_pretty(&outer.encode(UiTransactionEncoding::Json))?;
     let signing_keys = authorities
         .iter()
         .map(|authority| {
@@ -52,7 +45,7 @@ pub(super) fn render_signing_summary(
             forwarded_signers.join("\n")
         )
     };
-    let message_hash = outer.hash();
+    let message_hash = VersionedMessage::hash_raw_message(&outer.serialize());
     let expected_nonce = inner.lifetime_specifier;
     Ok(formatdoc! {"
         === Authorization ===
@@ -69,7 +62,7 @@ pub(super) fn render_signing_summary(
         Your signatures authorize this Execute call, including its accounts, permissions,
         and the inner message.
 
-        {outer_version} message:
+        v1 message:
         {outer_json}
 
         === Inner message (what the executor program invokes via CPI) ===
@@ -108,7 +101,7 @@ pub(super) fn confirm_signing(
 
 /// Sign the execute message with each signer.
 pub(super) fn sign_outer_message(
-    outer_message: &VersionedMessage,
+    outer_message: &v1::Message,
     signers: &[(Address, Box<dyn Signer>)],
 ) -> Result<Vec<(Address, Signature)>> {
     let message_bytes = outer_message.serialize();

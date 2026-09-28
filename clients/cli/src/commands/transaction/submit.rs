@@ -59,9 +59,8 @@ pub(super) async fn run(
 ) -> Result<String> {
     let message = read_execute_message(&command.execute_message)?;
     let execute = ExecuteAccounts::try_new(&message)?;
-    let required_signers = message.static_account_keys()
-        [..usize::from(message.header().num_required_signatures)]
-        .to_vec();
+    let required_signers =
+        message.account_keys[..usize::from(message.header.num_required_signatures)].to_vec();
     let authority_signatures =
         verify_authority_signatures(&command.authorities, &message, &required_signers, &execute)?;
 
@@ -181,7 +180,8 @@ pub(super) async fn run(
         })
         .collect::<Result<Vec<_>>>()?;
 
-    let mut instruction = spl_ed25519_signer_client::instruction::submit(signatures, message);
+    let mut instruction =
+        spl_ed25519_signer_client::instruction::submit(signatures, VersionedMessage::V1(message));
     // Forwarded signers need to sign the relay transaction.
     for meta in &mut instruction.accounts {
         meta.is_signer |=
@@ -216,9 +216,9 @@ struct ExecuteAccounts {
 }
 
 impl ExecuteAccounts {
-    fn try_new(message: &VersionedMessage) -> Result<Self> {
-        let account_keys = message.static_account_keys();
-        let [instruction] = message.instructions() else {
+    fn try_new(message: &v1::Message) -> Result<Self> {
+        let account_keys = &message.account_keys;
+        let [instruction] = message.instructions.as_slice() else {
             bail!("expected an Executor Execute instruction");
         };
         ensure!(
@@ -276,7 +276,7 @@ impl ExecuteAccounts {
 /// PDA authorities.
 fn verify_authority_signatures(
     entries: &[String],
-    message: &VersionedMessage,
+    message: &v1::Message,
     required_signers: &[Address],
     execute: &ExecuteAccounts,
 ) -> Result<BTreeMap<Address, Signature>> {
