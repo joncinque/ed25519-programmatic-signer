@@ -18,11 +18,12 @@ pub(crate) struct TransactionCommand {
 
 #[derive(Debug, Subcommand)]
 enum TransactionSubcommand {
-    /// Wrap and sign an inner message offline, returning signatures and the Execute message.
+    /// Wrap an execution message in an authorization message and sign it offline, returning
+    /// signatures and the authorization message.
     Sign(sign::SignCommand),
-    /// Simulate an inner message through the executor, without authority signatures.
+    /// Simulate an execution message through the executor, without authority signatures.
     Simulate(simulate::SimulateCommand),
-    /// Collect signatures for an execute message, then broadcast it in a Submit relay transaction.
+    /// Collect signatures for an authorization message, then submit it in a relay transaction.
     Submit(submit::SubmitCommand),
 }
 

@@ -12,11 +12,11 @@ pub fn programmatic_signer(authority: &Address) -> Address {
     ProgrammaticSigner::derive_address(&spl_ed25519_signer_client::id(), authority)
 }
 
-/// Build the execute message the way `transaction sign` does. The wrapped message's signers are
-/// the authorities plus every inner signer and the nonce authority that is not one of their
-/// derived signers.
-pub fn execute_message(
-    inner: &v1::Message,
+/// Build the authorization message the way `transaction sign` does. Its signers are the
+/// authorities plus every execution message signer and the nonce authority that is not one of
+/// their derived signers.
+pub fn build_authorization_message(
+    execution_message: &v1::Message,
     nonce_account: &Address,
     nonce_authority: &Address,
     authorities: &[Address],
@@ -25,8 +25,9 @@ pub fn execute_message(
         .iter()
         .map(programmatic_signer)
         .collect::<BTreeSet<_>>();
-    let inner_signers = &inner.account_keys[..usize::from(inner.header.num_required_signatures)];
-    let signers = inner_signers
+    let execution_signers = &execution_message.account_keys
+        [..usize::from(execution_message.header.num_required_signatures)];
+    let signers = execution_signers
         .iter()
         .chain([nonce_authority])
         .filter(|address| !derived_signers.contains(*address))
@@ -35,7 +36,10 @@ pub fn execute_message(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    authorization_message(&execute(nonce_account, nonce_authority, inner), &signers)
+    authorization_message(
+        &execute(nonce_account, nonce_authority, execution_message),
+        &signers,
+    )
 }
 
 pub fn encode(message: &VersionedMessage) -> String {

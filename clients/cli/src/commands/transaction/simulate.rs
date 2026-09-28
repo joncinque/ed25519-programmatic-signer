@@ -1,5 +1,5 @@
 use {
-    super::decode::read_inner_message,
+    super::decode::read_execution_message,
     crate::{client::Client, output::OutputFormat},
     anyhow::{Context, Result, bail, ensure},
     clap::Args,
@@ -23,8 +23,8 @@ use {
 
 #[derive(Debug, Args)]
 pub(super) struct SimulateCommand {
-    /// Base64-encoded v1 inner transaction message.
-    inner_message: String,
+    /// Base64-encoded v1 execution message.
+    execution_message: String,
 
     /// SPL nonce account protecting this execution.
     nonce_account: Address,
@@ -33,7 +33,7 @@ pub(super) struct SimulateCommand {
     #[clap(long)]
     nonce_authority: Option<Address>,
 
-    /// Expected nonce value, which replaces the inner message's recent blockhash.
+    /// Expected nonce value, which replaces the execution message's recent blockhash.
     /// Defaults to the nonce account's current value.
     #[clap(long)]
     nonce_hash: Option<Hash>,
@@ -57,8 +57,8 @@ pub(super) async fn run(
     let nonce = client.nonce_account(&command.nonce_account).await?.state;
     let nonce_authority = command.nonce_authority.unwrap_or(nonce.authority);
     let nonce_hash = command.nonce_hash.unwrap_or(nonce.nonce);
-    let mut inner = read_inner_message(&command.inner_message)?;
-    inner.lifetime_specifier = nonce_hash;
+    let mut execution_message = read_execution_message(&command.execution_message)?;
+    execution_message.lifetime_specifier = nonce_hash;
     ensure!(
         nonce_hash == nonce.nonce,
         "expected nonce value {nonce_hash}, but nonce account {} currently has {}",
@@ -77,7 +77,7 @@ pub(super) async fn run(
     // Submit promotes the PDA signers and forwards the other signers to the executor, so every
     // signer the Execute instruction marks is a signer when it runs. Calling the executor
     // directly with those signers mirrors that, without the authority signatures Submit checks.
-    let instruction = execute(&command.nonce_account, &nonce_authority, &inner);
+    let instruction = execute(&command.nonce_account, &nonce_authority, &execution_message);
     // Compiling the message panics on more than 256 account keys.
     let account_count = instruction
         .accounts

@@ -14,7 +14,8 @@ use {
             cancels_when_forwarded_signer_declines, rejects_nonce_authority_mismatch,
             submits_authority_signatures_in_any_order,
             submits_authority_signed_transfer_and_rejects_replay,
-            submits_quietly_without_confirmation, submits_with_authority_as_inner_non_signer,
+            submits_quietly_without_confirmation,
+            submits_with_authority_as_execution_message_non_signer,
             submits_with_fee_payer_as_forwarded_signer, submits_with_forwarded_authority,
             submits_with_forwarded_ordinary_signer, submits_with_plain_key_nonce_authority,
         },
@@ -78,7 +79,7 @@ fn main() -> ExitCode {
         ),
         async_trial!(submits_with_forwarded_authority, env, runtime_handle),
         async_trial!(
-            submits_with_authority_as_inner_non_signer,
+            submits_with_authority_as_execution_message_non_signer,
             env,
             runtime_handle
         ),

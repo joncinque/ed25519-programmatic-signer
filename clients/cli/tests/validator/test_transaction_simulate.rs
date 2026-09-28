@@ -94,8 +94,13 @@ async fn create_token_accounts(
     (mint.pubkey(), source.pubkey(), destination.pubkey())
 }
 
-fn simulate(env: &TestEnv, test: &SubmitTest, inner: &v1::Message, extra: &[&str]) -> Output {
-    let encoded = BASE64_STANDARD.encode(inner.serialize());
+fn simulate(
+    env: &TestEnv,
+    test: &SubmitTest,
+    execution_message: &v1::Message,
+    extra: &[&str],
+) -> Output {
+    let encoded = BASE64_STANDARD.encode(execution_message.serialize());
     let nonce_account = test.nonce_account.to_string();
     let mut args = vec![
         "-C",
@@ -117,13 +122,13 @@ pub async fn simulates_promoted_and_forwarded_signers(env: &TestEnv) {
     let ordinary = Keypair::new();
     fund(env, &[signer, ordinary.pubkey()]).await;
     let test = SubmitTest::new(env, &signer).await;
-    let inner = test.inner(&[signer, ordinary.pubkey()]);
+    let execution_message = test.execution_message(&[signer, ordinary.pubkey()]);
 
     let for_authority = authority.pubkey().to_string();
     let output = simulate(
         env,
         &test,
-        &inner,
+        &execution_message,
         &["--change-for-authority", &for_authority],
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -180,7 +185,12 @@ pub async fn prints_verbose_simulation_result(env: &TestEnv) {
     let (signer_balance, recipient_balance) =
         (balance(signer).await, balance(test.recipient).await);
 
-    let output = simulate(env, &test, &test.inner(&[signer]), &["--verbose"]);
+    let output = simulate(
+        env,
+        &test,
+        &test.execution_message(&[signer]),
+        &["--verbose"],
+    );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(output.status.success(), "{stderr}");
     // The summary on stdout is unchanged.
@@ -241,7 +251,7 @@ pub async fn reports_failed_simulation_logs(env: &TestEnv) {
     let signer = programmatic_signer(&authority.pubkey());
     let test = SubmitTest::new(env, &signer).await;
 
-    let output = simulate(env, &test, &test.inner(&[signer]), &[]);
+    let output = simulate(env, &test, &test.execution_message(&[signer]), &[]);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(!output.status.success(), "unexpected success: {stderr}");
     assert!(output.stdout.is_empty());
@@ -258,7 +268,7 @@ pub async fn rejects_stale_nonce_hash(env: &TestEnv) {
     let output = simulate(
         env,
         &test,
-        &test.inner(&[signer]),
+        &test.execution_message(&[signer]),
         &["--nonce-hash", &stale],
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -280,7 +290,7 @@ pub async fn simulates_token_transfer(env: &TestEnv) {
     let (mint, source, destination) = create_token_accounts(env, &signer, &recipient).await;
     let test = SubmitTest::new(env, &signer).await;
     let amount = 1_500_000;
-    let inner = v1::Message::try_compile(
+    let execution_message = v1::Message::try_compile(
         &signer,
         &[transfer_checked(
             &spl_token_interface::id(),
@@ -297,7 +307,7 @@ pub async fn simulates_token_transfer(env: &TestEnv) {
     )
     .unwrap();
 
-    let output = simulate(env, &test, &inner, &[]);
+    let output = simulate(env, &test, &execution_message, &[]);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(output.status.success(), "{stderr}");
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
@@ -325,7 +335,7 @@ pub async fn simulates_token_transfer(env: &TestEnv) {
 
     // The display output shows the amounts with their decimals, and labels the token account
     // owned by the authority's derived signer.
-    let encoded = BASE64_STANDARD.encode(inner.serialize());
+    let encoded = BASE64_STANDARD.encode(execution_message.serialize());
     let nonce_account = test.nonce_account.to_string();
     let for_authority = authority.pubkey().to_string();
     let display = run_psigner(&[

@@ -17,33 +17,33 @@ pub(super) fn read_message(input: &str, name: &str) -> Result<VersionedMessage> 
     Ok(message)
 }
 
-/// Read an inner message the executor can invoke.
-pub(super) fn read_inner_message(input: &str) -> Result<v1::Message> {
-    executable_inner_message(read_message(input, "inner message")?)
+/// Read an execution message the executor can invoke.
+pub(super) fn read_execution_message(input: &str) -> Result<v1::Message> {
+    validate_execution_message(read_message(input, "execution message")?)
 }
 
-/// Check that a sanitized inner message is one the executor can invoke. Sanitizing a v1 message
+/// Check that a sanitized execution message is one the executor can invoke. Sanitizing a v1 message
 /// already rejects duplicate account keys.
-pub(super) fn executable_inner_message(message: VersionedMessage) -> Result<v1::Message> {
+pub(super) fn validate_execution_message(message: VersionedMessage) -> Result<v1::Message> {
     let VersionedMessage::V1(message) = message else {
-        bail!("the executor supports only v1 inner messages");
+        bail!("the executor supports only v1 execution messages");
     };
     ensure!(
         message.config == v1::TransactionConfig::default(),
-        "inner message must not set transaction config fields, which only apply to top-level \
+        "execution message must not set transaction config fields, which only apply to top-level \
          transactions"
     );
     Ok(message)
 }
 
-/// Read an execute message the signer program accepts.
-pub(super) fn read_execute_message(input: &str) -> Result<v1::Message> {
-    let VersionedMessage::V1(message) = read_message(input, "execute message")? else {
-        bail!("the signer program supports only v1 execute messages");
+/// Read an authorization message the signer program accepts.
+pub(super) fn read_authorization_message(input: &str) -> Result<v1::Message> {
+    let VersionedMessage::V1(message) = read_message(input, "authorization message")? else {
+        bail!("the signer program supports only v1 authorization messages");
     };
     ensure!(
         message.config == v1::TransactionConfig::default(),
-        "execute message must not set transaction config fields"
+        "authorization message must not set transaction config fields"
     );
     Ok(message)
 }

@@ -1,4 +1,4 @@
-=== Authorization ===
+=== Signing ===
 Message hash: CKoZ2gaq6zomRS3XLFWgk5CBXxYeQkWKy58SExhQML6S
 PDA promotion authorities:
   AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9 (derived signer: 3jCYn5zriQtvK6iEkWyDc3M6dkHvmR9XccrZyjJF96tF)
@@ -6,11 +6,11 @@ PDA promotion authorities:
 === Replay protection ===
 SPL nonce account address: 8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR
 Nonce authority: 3jCYn5zriQtvK6iEkWyDc3M6dkHvmR9XccrZyjJF96tF
-Expected nonce value (inner message's recent blockhash): YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf
+Expected nonce value (execution message's recent blockhash): YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf
 
-=== Outer message ===
+=== Authorization message ===
 Your signatures authorize this Execute call, including its accounts, permissions,
-and the inner message.
+and the execution message.
 
 v1 message:
 {
@@ -52,7 +52,7 @@ v1 message:
   }
 }
 
-=== Inner message (what the executor program invokes via CPI) ===
+=== Execution message (what the executor program invokes via CPI) ===
 v1 message:
 {
   "accountKeys": [
@@ -99,5 +99,5 @@ v1 message:
   }
 }
 
-Signing returns addresses, signatures, forwarded signers, and the base64 Execute message. Nothing is submitted.
+Signing returns addresses, signatures, forwarded signers, and the base64 authorization message. Nothing is submitted.
 Sign this message for AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9? [y/N]

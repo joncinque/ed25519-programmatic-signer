@@ -1,6 +1,6 @@
 use {
     super::{
-        decode::{executable_inner_message, read_execute_message},
+        decode::{read_authorization_message, validate_execution_message},
         summary::{confirm_signing, render_signing_summary},
     },
     crate::{cli::keypair_source_parser, client::Client, output::OutputFormat},
@@ -25,9 +25,9 @@ use {
 
 #[derive(Debug, Args)]
 pub(super) struct SubmitCommand {
-    /// Base64-encoded v1 execute message returned by `transaction sign`.
+    /// Base64-encoded v1 authorization message returned by `transaction sign`.
     #[clap(long)]
-    execute_message: String,
+    authorization_message: String,
 
     /// Authority address and signature returned by `transaction sign`. Repeat for each PDA
     /// authority.
@@ -35,13 +35,14 @@ pub(super) struct SubmitCommand {
     authorities: Vec<String>,
 
     /// Signer source for a signer the executor uses directly: a keypair file, usb:// URL,
-    /// prompt:// URL, or the ASK keyword. Repeat for each signer. These sign both the execute
-    /// message and the relay transaction, after a signing summary. The fee payer is always a
-    /// relay transaction signer.
+    /// prompt:// URL, or the ASK keyword. Repeat for each signer. Each is a required signer on
+    /// the authorization message, so it signs that message after a signing summary. It also signs
+    /// the relay transaction, which forwards its signer privilege to the executor. The fee payer
+    /// is always a relay transaction signer.
     #[clap(long, value_parser = keypair_source_parser())]
     signer: Vec<SignerSource>,
 
-    /// Hide the signing summary shown when a relay signer signs the execute message.
+    /// Hide the signing summary shown when a relay signer signs the authorization message.
     /// Confirmation prompts and errors are still shown.
     #[clap(long)]
     quiet: bool,
@@ -57,12 +58,17 @@ pub(super) async fn run(
     client: &Client,
     output: OutputFormat,
 ) -> Result<String> {
-    let message = read_execute_message(&command.execute_message)?;
-    let execute = ExecuteAccounts::try_new(&message)?;
-    let required_signers =
-        message.account_keys[..usize::from(message.header.num_required_signatures)].to_vec();
-    let authority_signatures =
-        verify_authority_signatures(&command.authorities, &message, &required_signers, &execute)?;
+    let authorization_message = read_authorization_message(&command.authorization_message)?;
+    let execute = ExecuteAccounts::try_new(&authorization_message)?;
+    let required_signers = authorization_message.account_keys
+        [..usize::from(authorization_message.header.num_required_signatures)]
+        .to_vec();
+    let authority_signatures = verify_authority_signatures(
+        &command.authorities,
+        &authorization_message,
+        &required_signers,
+        &execute,
+    )?;
 
     let fee_payer = client.fee_payer()?;
     let fee_payer_address = fee_payer.try_pubkey()?;
@@ -74,7 +80,7 @@ pub(super) async fn run(
         // through `transaction sign`.
         ensure!(
             required_signers.contains(&address) && execute.is_forwarded(&address),
-            "{address} is not a forwarded signer on the execute message{}",
+            "{address} is not a forwarded signer on the authorization message{}",
             if execute.is_pda_authority(&address) {
                 ", PDA authorities sign with `transaction sign`"
             } else {
@@ -88,13 +94,17 @@ pub(super) async fn run(
             relay_signers.push((address, signer));
         }
     }
-    // Relay signers on the execute message have their signer privilege forwarded to the
+    // Relay signers on the authorization message have their signer privilege forwarded to the
     // executor, so they review it like `transaction sign`. A fee payer that is not on the
-    // execute message only signs the relay transaction.
-    let (message_signers, relay_only_signers): (Vec<_>, Vec<_>) = relay_signers
+    // authorization message only signs the relay transaction.
+    let (authorization_signers, relay_only_signers): (Vec<_>, Vec<_>) = relay_signers
         .into_iter()
         .partition(|(address, _)| required_signers.contains(address));
-    let is_relay = |address: &Address| message_signers.iter().any(|(relay, _)| relay == address);
+    let is_relay = |address: &Address| {
+        authorization_signers
+            .iter()
+            .any(|(relay, _)| relay == address)
+    };
 
     // Authorities need a signature from `transaction sign`. Signers the executor uses directly
     // only keep their signer privilege if they also sign the relay transaction. An authority can
@@ -121,20 +131,20 @@ pub(super) async fn run(
     let nonce = client.nonce_account(&execute.nonce_account).await?.state;
     ensure!(
         nonce.nonce == execute.expected_nonce,
-        "execute message uses nonce value {}, but nonce account {} currently has {}",
+        "authorization message uses nonce value {}, but nonce account {} currently has {}",
         execute.expected_nonce,
         execute.nonce_account,
         nonce.nonce
     );
     ensure!(
         nonce.authority == execute.nonce_authority,
-        "execute message uses nonce authority {}, but nonce account {} has authority {}",
+        "authorization message uses nonce authority {}, but nonce account {} has authority {}",
         execute.nonce_authority,
         execute.nonce_account,
         nonce.authority
     );
 
-    if !message_signers.is_empty() {
+    if !authorization_signers.is_empty() {
         if !command.quiet {
             // An authority the executor also uses directly is in both lists.
             let pda_authorities = required_signers
@@ -150,8 +160,8 @@ pub(super) async fn run(
             eprintln!(
                 "{}",
                 render_signing_summary(
-                    &execute.inner,
-                    &message,
+                    &execute.execution_message,
+                    &authorization_message,
                     &execute.nonce_account,
                     &execute.nonce_authority,
                     &pda_authorities,
@@ -160,34 +170,36 @@ pub(super) async fn run(
                 )?
             );
         }
-        confirm_signing(&message_signers, command.yes)?;
+        confirm_signing(&authorization_signers, command.yes)?;
     }
 
-    let message_bytes = message.serialize();
+    let message_bytes = authorization_message.serialize();
     let signatures = required_signers
         .iter()
         .map(|address| {
             if let Some(signature) = authority_signatures.get(address) {
                 return Ok(*signature);
             }
-            let (_, signer) = message_signers
+            let (_, signer) = authorization_signers
                 .iter()
                 .find(|(relay, _)| relay == address)
                 .context("missing relay signer")?;
             signer
                 .try_sign_message(&message_bytes)
-                .with_context(|| format!("failed to sign execute message with {address}"))
+                .with_context(|| format!("failed to sign authorization message with {address}"))
         })
         .collect::<Result<Vec<_>>>()?;
 
-    let mut instruction =
-        spl_ed25519_signer_client::instruction::submit(signatures, VersionedMessage::V1(message));
+    let mut instruction = spl_ed25519_signer_client::instruction::submit(
+        signatures,
+        VersionedMessage::V1(authorization_message),
+    );
     // Forwarded signers need to sign the relay transaction.
     for meta in &mut instruction.accounts {
         meta.is_signer |=
             required_signers.contains(&meta.pubkey) && execute.is_forwarded(&meta.pubkey);
     }
-    let relay_signers = message_signers
+    let relay_signers = authorization_signers
         .iter()
         .chain(&relay_only_signers)
         .map(|(_, signer)| signer.as_ref())
@@ -206,12 +218,12 @@ pub(super) async fn run(
     output.render(&SubmitOutput { signature })
 }
 
-/// The accounts of an execute message's single `Execute` instruction.
+/// The accounts of an authorization message's single `Execute` instruction.
 struct ExecuteAccounts {
     nonce_authority: Address,
     nonce_account: Address,
     expected_nonce: Hash,
-    inner: v1::Message,
+    execution_message: v1::Message,
     accounts: BTreeSet<Address>,
 }
 
@@ -226,13 +238,13 @@ impl ExecuteAccounts {
                 == Some(&spl_message_executor_interface::id()),
             "expected an Executor Execute instruction"
         );
-        let ExecutorInstruction::Execute(inner) =
+        let ExecutorInstruction::Execute(execution_message) =
             ExecutorInstruction::try_from_bytes(&instruction.data)
                 .context("invalid Execute instruction")?;
-        let inner = executable_inner_message(inner)?;
+        let execution_message = validate_execution_message(execution_message)?;
 
-        // Infallible: read_execute_message sanitized the message, which checks every instruction
-        // account index is within the account keys.
+        // Infallible: read_authorization_message sanitized the message, which checks every
+        // instruction account index is within the account keys.
         let accounts = instruction
             .accounts
             .iter()
@@ -247,8 +259,8 @@ impl ExecuteAccounts {
         Ok(Self {
             nonce_authority: *nonce_authority,
             nonce_account: *nonce_account,
-            expected_nonce: inner.lifetime_specifier,
-            inner,
+            expected_nonce: execution_message.lifetime_specifier,
+            execution_message,
             accounts: accounts.into_iter().collect(),
         })
     }
@@ -259,16 +271,16 @@ impl ExecuteAccounts {
         self.accounts.contains(&pda)
     }
 
-    /// The executor uses the signer itself as the nonce authority or an inner message signer,
+    /// The executor uses the signer itself as the nonce authority or an execution message signer,
     /// so it must be a relay transaction signer.
     fn is_forwarded(&self, signer: &Address) -> bool {
         signer == &self.nonce_authority
             || self
-                .inner
+                .execution_message
                 .account_keys
                 .iter()
                 .position(|address| address == signer)
-                .is_some_and(|index| self.inner.is_signer(index))
+                .is_some_and(|index| self.execution_message.is_signer(index))
     }
 }
 
@@ -290,11 +302,11 @@ fn verify_authority_signatures(
         let signature = Signature::from_str(signature).context("invalid authority signature")?;
         ensure!(
             required_signers.contains(&address),
-            "{address} is not a signer on the execute message"
+            "{address} is not a signer on the authorization message"
         );
         ensure!(
             execute.is_pda_authority(&address),
-            "{address} is not a PDA authority on the execute message; pass it with --signer"
+            "{address} is not a PDA authority on the authorization message; pass it with --signer"
         );
         ensure!(
             signature.verify(address.as_ref(), &message_bytes),
