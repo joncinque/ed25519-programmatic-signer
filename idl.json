@@ -321,7 +321,7 @@
           "kind": "errorNode",
           "name": "invalidMessage",
           "code": 1,
-          "message": "The legacy message fails sanitization or contains duplicate keys"
+          "message": "The v1 message fails sanitization or contains duplicate keys"
         },
         {
           "kind": "errorNode",
@@ -334,6 +334,18 @@
           "name": "nonceMismatch",
           "code": 3,
           "message": "The message's recent blockhash does not match the stored nonce"
+        },
+        {
+          "kind": "errorNode",
+          "name": "unsupportedMessageVersion",
+          "code": 4,
+          "message": "The wrapped message is not a v1 message"
+        },
+        {
+          "kind": "errorNode",
+          "name": "unsupportedTransactionConfig",
+          "code": 5,
+          "message": "The wrapped message sets transaction config fields"
         }
       ]
     },

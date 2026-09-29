@@ -11,14 +11,18 @@ use {
     solana_address::Address,
     solana_hash::Hash,
     solana_instruction::{AccountMeta, error::InstructionError},
-    solana_message::{MessageHeader, compiled_instruction::CompiledInstruction, legacy},
+    solana_message::{
+        MessageHeader, VersionedMessage, compiled_instruction::CompiledInstruction, legacy, v0, v1,
+    },
     solana_program_error::ProgramError,
     solana_system_interface::instruction::transfer,
     spl_message_executor_interface::{
-        error::Error as MessageExecutorError, instruction::derive_transition_commitment,
+        error::Error as MessageExecutorError,
+        instruction::{Instruction as MessageExecutorInstruction, derive_transition_commitment},
     },
     spl_nonce_client::instruction::advance,
     spl_nonce_interface::{error::Error as NonceError, state::Nonce},
+    test_case::test_case,
 };
 
 pub mod helpers;
@@ -84,6 +88,31 @@ fn execute_rejects_duplicate_message_addresses() {
         .execute();
 }
 
+#[test_case(VersionedMessage::Legacy(legacy::Message::default()) ; "legacy")]
+#[test_case(VersionedMessage::V0(v0::Message::default()) ; "v0")]
+fn execute_rejects_non_v1_message(message: VersionedMessage) {
+    ExecuteBuilder::default()
+        .mutate_execute_ix(move |ix| {
+            ix.data = wincode::serialize(&MessageExecutorInstruction::Execute(message)).unwrap();
+        })
+        .check_err(MessageExecutorError::UnsupportedMessageVersion)
+        .execute();
+}
+
+#[test_case(v1::TransactionConfig::default().with_priority_fee(1) ; "priority fee")]
+#[test_case(v1::TransactionConfig::default().with_compute_unit_limit(1) ; "compute unit limit")]
+#[test_case(
+    v1::TransactionConfig::default().with_loaded_accounts_data_size_limit(1)
+    ; "loaded accounts data size limit"
+)]
+#[test_case(v1::TransactionConfig::default().with_heap_size(v1::MIN_HEAP_SIZE) ; "heap size")]
+fn execute_rejects_transaction_config(config: v1::TransactionConfig) {
+    ExecuteBuilder::default()
+        .mutate_message(move |message| message.config = config)
+        .check_err(MessageExecutorError::UnsupportedTransactionConfig)
+        .execute();
+}
+
 #[test]
 fn execute_rejects_recent_blockhash_mismatch() {
     ExecuteBuilder::default()
@@ -110,23 +139,25 @@ fn execute_supports_precomputed_nonce_chain() {
     let initial_state = decode_state(&nonce_account);
 
     let first_recipient = Address::new_unique();
-    let first_message = legacy::Message::new_with_blockhash(
+    let first_message = v1::Message::try_compile(
+        &DEFAULT_AUTHORITY,
         &[transfer(&DEFAULT_AUTHORITY, &first_recipient, 1)],
-        Some(&DEFAULT_AUTHORITY),
-        &initial_state.nonce,
-    );
+        initial_state.nonce,
+    )
+    .unwrap();
     let first_nonce = initial_state.derive_next_nonce(
         &spl_nonce_interface::id(),
         &nonce_address,
-        &derive_transition_commitment(&first_message),
+        &derive_transition_commitment(&VersionedMessage::V1(first_message.clone())),
     );
 
     let second_recipient = Address::new_unique();
-    let second_message = legacy::Message::new_with_blockhash(
+    let second_message = v1::Message::try_compile(
+        &DEFAULT_AUTHORITY,
         &[transfer(&DEFAULT_AUTHORITY, &second_recipient, 1)],
-        Some(&DEFAULT_AUTHORITY),
-        &first_nonce,
-    );
+        first_nonce,
+    )
+    .unwrap();
     let second_nonce = Nonce {
         nonce: first_nonce,
         authority: initial_state.authority,
@@ -135,7 +166,7 @@ fn execute_supports_precomputed_nonce_chain() {
     .derive_next_nonce(
         &spl_nonce_interface::id(),
         &nonce_address,
-        &derive_transition_commitment(&second_message),
+        &derive_transition_commitment(&VersionedMessage::V1(second_message.clone())),
     );
 
     let first = ExecuteBuilder::new(mollusk)
@@ -157,22 +188,24 @@ fn tampered_message_invalidates_precomputed_successor() {
     let (nonce_address, nonce_account) = initialize_nonce_account(&mollusk, &DEFAULT_AUTHORITY);
     let initial_state = decode_state(&nonce_account);
 
-    let planned_message = legacy::Message::new_with_blockhash(
+    let planned_message = v1::Message::try_compile(
+        &DEFAULT_AUTHORITY,
         &[transfer(&DEFAULT_AUTHORITY, &Address::new_unique(), 1)],
-        Some(&DEFAULT_AUTHORITY),
-        &initial_state.nonce,
-    );
+        initial_state.nonce,
+    )
+    .unwrap();
     let planned_successor = initial_state.derive_next_nonce(
         &spl_nonce_interface::id(),
         &nonce_address,
-        &derive_transition_commitment(&planned_message),
+        &derive_transition_commitment(&VersionedMessage::V1(planned_message.clone())),
     );
 
-    let tampered_message = legacy::Message::new_with_blockhash(
+    let tampered_message = v1::Message::try_compile(
+        &DEFAULT_AUTHORITY,
         &[transfer(&DEFAULT_AUTHORITY, &Address::new_unique(), 2)],
-        Some(&DEFAULT_AUTHORITY),
-        &initial_state.nonce,
-    );
+        initial_state.nonce,
+    )
+    .unwrap();
     let tampered = ExecuteBuilder::new(mollusk)
         .nonce_account(nonce_address, nonce_account)
         .message(tampered_message)
@@ -333,7 +366,7 @@ fn execute_rolls_back_nonce_when_inner_instruction_fails() {
 
     assert_eq!(
         decode_state(&result.nonce_account).nonce,
-        result.message.recent_blockhash
+        result.message.lifetime_specifier
     );
 }
 
@@ -371,20 +404,21 @@ fn execute_accepts_nonce_authority_as_readonly_nonpayer_signer() {
 }
 
 #[test]
-fn execute_accepts_static_legacy_message() {
+fn execute_accepts_static_v1_message() {
     let recipient = Address::new_unique();
     let transfer_lamports = 1_000_000;
     let mollusk = init_mollusk();
     let (nonce_address, nonce_account) = initialize_nonce_account(&mollusk, &DEFAULT_AUTHORITY);
     let old_nonce = decode_state(&nonce_account).nonce;
     let transfer_ix = transfer(&DEFAULT_AUTHORITY, &recipient, transfer_lamports);
-    let message = legacy::Message {
+    let message = v1::Message {
         header: MessageHeader {
             num_required_signatures: 1,
             num_readonly_signed_accounts: 0,
             num_readonly_unsigned_accounts: 1,
         },
-        recent_blockhash: old_nonce,
+        config: v1::TransactionConfig::default(),
+        lifetime_specifier: old_nonce,
         account_keys: vec![
             DEFAULT_AUTHORITY,
             recipient,
@@ -467,7 +501,7 @@ fn execute_accepts_nonce_authority_absent_from_wrapped_message() {
     assert_eq!(result.account(&recipient).unwrap().lamports, 1);
     assert_ne!(
         decode_state(&result.nonce_account).nonce,
-        result.message.recent_blockhash
+        result.message.lifetime_specifier
     );
 }
 

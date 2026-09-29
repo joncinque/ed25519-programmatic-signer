@@ -1,7 +1,7 @@
 use {
     anyhow::{Context, Result, bail, ensure},
     base64::{Engine, prelude::BASE64_STANDARD},
-    solana_message::{VersionedMessage, legacy::Message},
+    solana_message::{VersionedMessage, v1},
 };
 
 /// Decode and sanitize a base64-encoded message. `name` describes the message in errors.
@@ -18,13 +18,20 @@ pub(super) fn read_message(input: &str, name: &str) -> Result<VersionedMessage> 
 }
 
 /// Read an inner message the executor can invoke.
-pub(super) fn read_inner_message(input: &str) -> Result<Message> {
-    let VersionedMessage::Legacy(message) = read_message(input, "inner message")? else {
-        bail!("the executor supports only legacy inner messages");
+pub(super) fn read_inner_message(input: &str) -> Result<v1::Message> {
+    executable_inner_message(read_message(input, "inner message")?)
+}
+
+/// Check that a sanitized inner message is one the executor can invoke. Sanitizing a v1 message
+/// already rejects duplicate account keys.
+pub(super) fn executable_inner_message(message: VersionedMessage) -> Result<v1::Message> {
+    let VersionedMessage::V1(message) = message else {
+        bail!("the executor supports only v1 inner messages");
     };
     ensure!(
-        !message.has_duplicates(),
-        "inner message must not contain duplicate account keys"
+        message.config == v1::TransactionConfig::default(),
+        "inner message must not set transaction config fields, which only apply to top-level \
+         transactions"
     );
     Ok(message)
 }

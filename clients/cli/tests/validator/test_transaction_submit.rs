@@ -6,7 +6,7 @@ use {
     solana_address::Address,
     solana_hash::Hash,
     solana_keypair::{Keypair, write_keypair_file},
-    solana_message::{VersionedMessage, legacy::Message},
+    solana_message::{VersionedMessage, v1},
     solana_signer::Signer,
     solana_system_interface::instruction::transfer,
     solana_transaction::Transaction,
@@ -48,12 +48,12 @@ impl SubmitTest {
     }
 
     /// An inner message transferring from each sender to the recipient.
-    pub(crate) fn inner(&self, senders: &[Address]) -> Message {
+    pub(crate) fn inner(&self, senders: &[Address]) -> v1::Message {
         let transfers = senders
             .iter()
             .map(|sender| transfer(sender, &self.recipient, TRANSFER_AMOUNT))
             .collect::<Vec<_>>();
-        Message::new_with_blockhash(&transfers, Some(&senders[0]), &self.nonce)
+        v1::Message::try_compile(&senders[0], &transfers, self.nonce).unwrap()
     }
 
     pub(crate) async fn assert_received(&self, env: &TestEnv, transfers: u64) {
@@ -384,14 +384,15 @@ pub async fn submits_with_authority_as_inner_non_signer(env: &TestEnv) {
     fund(env, &[signer]).await;
     let test = SubmitTest::new(env, &signer).await;
     // The authority's own address only receives a transfer, so it is not forwarded.
-    let inner = Message::new_with_blockhash(
+    let inner = v1::Message::try_compile(
+        &signer,
         &[
             transfer(&signer, &test.recipient, TRANSFER_AMOUNT),
             transfer(&signer, &authority.pubkey(), TRANSFER_AMOUNT),
         ],
-        Some(&signer),
-        &test.nonce,
-    );
+        test.nonce,
+    )
+    .unwrap();
     let message = execute_message(&inner, &test.nonce_account, &signer, &[authority.pubkey()]);
 
     assert_submitted(

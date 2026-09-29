@@ -1,6 +1,6 @@
 use {
     super::{
-        decode::read_message,
+        decode::{executable_inner_message, read_message},
         summary::{confirm_signing, render_signing_summary},
     },
     crate::{cli::keypair_source_parser, client::Client, output::OutputFormat},
@@ -10,7 +10,7 @@ use {
     solana_address::Address,
     solana_clap_v3_utils::input_parsers::signer::SignerSource,
     solana_hash::Hash,
-    solana_message::{VersionedMessage, legacy::Message},
+    solana_message::{VersionedMessage, v1},
     solana_signature::Signature,
     solana_signer::Signer,
     solana_transaction::Transaction,
@@ -211,7 +211,7 @@ struct ExecuteAccounts {
     nonce_authority: Address,
     nonce_account: Address,
     expected_nonce: Hash,
-    inner: Message,
+    inner: v1::Message,
     accounts: BTreeSet<Address>,
 }
 
@@ -229,6 +229,7 @@ impl ExecuteAccounts {
         let ExecutorInstruction::Execute(inner) =
             ExecutorInstruction::try_from_bytes(&instruction.data)
                 .context("invalid Execute instruction")?;
+        let inner = executable_inner_message(inner)?;
 
         // The signer program does not resolve address lookup tables.
         let accounts = instruction
@@ -246,7 +247,7 @@ impl ExecuteAccounts {
         Ok(Self {
             nonce_authority: *nonce_authority,
             nonce_account: *nonce_account,
-            expected_nonce: inner.recent_blockhash,
+            expected_nonce: inner.lifetime_specifier,
             inner,
             accounts: accounts.into_iter().collect(),
         })

@@ -35,4 +35,5 @@ solana-rent = { workspace = true }
 solana-program-error = { workspace = true }
 solana-system-interface = { workspace = true, features = ["wincode"] }
 spl-message-executor-client = { workspace = true }
+test-case = { workspace = true }
 wincode = { workspace = true }

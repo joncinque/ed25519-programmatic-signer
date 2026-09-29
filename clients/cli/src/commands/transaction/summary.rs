@@ -2,7 +2,7 @@ use {
     anyhow::{Context, Result, ensure},
     indoc::formatdoc,
     solana_address::Address,
-    solana_message::{VersionedMessage, legacy::Message},
+    solana_message::{VersionedMessage, v1},
     solana_signature::Signature,
     solana_signer::Signer,
     solana_transaction_status::{Encodable, EncodableWithMeta, UiTransactionEncoding},
@@ -13,7 +13,7 @@ use {
 /// Describe what signing the execute message authorizes. `closing` says what happens after
 /// signing.
 pub(super) fn render_signing_summary(
-    inner: &Message,
+    inner: &v1::Message,
     outer: &VersionedMessage,
     nonce_account: &Address,
     nonce_authority: &Address,
@@ -53,7 +53,7 @@ pub(super) fn render_signing_summary(
         )
     };
     let message_hash = outer.hash();
-    let expected_nonce = inner.recent_blockhash;
+    let expected_nonce = inner.lifetime_specifier;
     Ok(formatdoc! {"
         === Authorization ===
         Message hash: {message_hash}
@@ -73,7 +73,7 @@ pub(super) fn render_signing_summary(
         {outer_json}
 
         === Inner message (what the executor program invokes via CPI) ===
-        Legacy message:
+        v1 message:
         {inner_json}
 
         {closing}"

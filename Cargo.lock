@@ -10264,6 +10264,7 @@ dependencies = [
  "spl-message-executor-interface",
  "spl-nonce-client",
  "spl-nonce-interface",
+ "test-case",
  "wincode",
 ]
 

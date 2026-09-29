@@ -13,12 +13,10 @@ pub enum Error {
         codama(error(message = "The nonce account data could not be decoded as nonce state"))
     )]
     InvalidNonceAccount = 0,
-    /// The legacy message fails sanitization or contains duplicate keys.
+    /// The v1 message fails sanitization or contains duplicate keys.
     #[cfg_attr(
         feature = "codama",
-        codama(error(
-            message = "The legacy message fails sanitization or contains duplicate keys"
-        ))
+        codama(error(message = "The v1 message fails sanitization or contains duplicate keys"))
     )]
     InvalidMessage = 1,
     /// The passed accounts do not match the wrapped message's account keys.
@@ -35,6 +33,19 @@ pub enum Error {
         codama(error(message = "The message's recent blockhash does not match the stored nonce"))
     )]
     NonceMismatch = 3,
+    /// The wrapped message is not a v1 message.
+    #[cfg_attr(
+        feature = "codama",
+        codama(error(message = "The wrapped message is not a v1 message"))
+    )]
+    UnsupportedMessageVersion = 4,
+    /// The wrapped message sets transaction config fields, which only apply to top-level
+    /// transactions.
+    #[cfg_attr(
+        feature = "codama",
+        codama(error(message = "The wrapped message sets transaction config fields"))
+    )]
+    UnsupportedTransactionConfig = 5,
 }
 
 impl From<Error> for ProgramError {

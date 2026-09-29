@@ -32,15 +32,17 @@ mod tests {
     use {
         super::{EXECUTE_DISCRIMINATOR, validate},
         pinocchio::Address,
-        solana_message::legacy::Message,
+        solana_message::{VersionedMessage, v1},
         spl_ed25519_signer_interface::error::Error,
         spl_message_executor_interface::instruction::Instruction as ExecutorInstruction,
     };
 
     #[test]
     fn accepts_message_executor_execute_wire_format() {
-        let instruction_data =
-            wincode::serialize(&ExecutorInstruction::Execute(Message::default())).unwrap();
+        let instruction_data = wincode::serialize(&ExecutorInstruction::Execute(
+            VersionedMessage::V1(v1::Message::default()),
+        ))
+        .unwrap();
 
         assert_eq!(
             validate(&spl_message_executor_interface::ID, &instruction_data,),

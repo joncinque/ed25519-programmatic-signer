@@ -8,7 +8,7 @@ use {
     solana_hash::Hash,
     solana_instruction::{AccountMeta, Instruction},
     solana_keypair::{Keypair, write_keypair_file},
-    solana_message::{VersionedMessage, legacy::Message},
+    solana_message::{VersionedMessage, legacy, v1},
     solana_signer::Signer,
     solana_system_interface::instruction::transfer,
     spl_ed25519_signer_client::message::wrapped_message,
@@ -58,14 +58,15 @@ impl SubmitTestEnv {
         let nonce_account = Address::new_unique();
         let nonce_authority = programmatic_signer(&authority.pubkey());
         let recipient = Address::new_unique();
-        let inner = Message::new_with_blockhash(
+        let inner = v1::Message::try_compile(
+            &nonce_authority,
             &[
                 transfer(&nonce_authority, &recipient, 1),
                 transfer(&ordinary.pubkey(), &recipient, 1),
             ],
-            Some(&nonce_authority),
-            &Hash::new_unique(),
-        );
+            Hash::new_unique(),
+        )
+        .unwrap();
         let message = execute_message(
             &inner,
             &nonce_account,
@@ -178,7 +179,7 @@ fn rejects_execute_without_nonce_accounts() {
     let env = SubmitTestEnv::new();
     let instruction = Instruction::new_with_wincode(
         spl_message_executor_interface::id(),
-        &ExecutorInstruction::Execute(Message::default()),
+        &ExecutorInstruction::Execute(VersionedMessage::V1(v1::Message::default())),
         vec![AccountMeta::new(Address::new_unique(), false)],
     );
     let message = wrapped_message(&instruction, &[env.authority.pubkey()]);
@@ -186,6 +187,30 @@ fn rejects_execute_without_nonce_accounts() {
         &env.submit(&encode(&message), &[]),
         "expected the nonce authority, nonce account, and SPL Nonce program in Execute accounts",
     );
+}
+
+#[test_case(
+    VersionedMessage::Legacy(legacy::Message::default()),
+    "the executor supports only v1 inner messages";
+    "legacy"
+)]
+#[test_case(
+    VersionedMessage::V1(v1::Message {
+        config: v1::TransactionConfig::default().with_priority_fee(1),
+        ..v1::Message::default()
+    }),
+    "inner message must not set transaction config fields";
+    "transaction config"
+)]
+fn rejects_inner_message_the_executor_cannot_invoke(inner: VersionedMessage, expected: &str) {
+    let env = SubmitTestEnv::new();
+    let instruction = Instruction::new_with_wincode(
+        spl_message_executor_interface::id(),
+        &ExecutorInstruction::Execute(inner),
+        vec![AccountMeta::new(Address::new_unique(), false)],
+    );
+    let message = wrapped_message(&instruction, &[env.authority.pubkey()]);
+    assert_failure(&env.submit(&encode(&message), &[]), expected);
 }
 
 #[test_case("missing separator", "invalid authority: expected ADDRESS=SIGNATURE"; "missing separator")]
@@ -322,14 +347,15 @@ fn forwarded_authority_needs_authority_and_signer_args(
     let authority = env.authority.pubkey();
     let signer = programmatic_signer(&authority);
     let recipient = Address::new_unique();
-    let inner = Message::new_with_blockhash(
+    let inner = v1::Message::try_compile(
+        &signer,
         &[
             transfer(&signer, &recipient, 1),
             transfer(&authority, &recipient, 1),
         ],
-        Some(&signer),
-        &Hash::new_unique(),
-    );
+        Hash::new_unique(),
+    )
+    .unwrap();
     let message = execute_message(&inner, &env.nonce_account, &signer, &[authority]);
     let authority_entry = signature_entry(&env.authority, &message);
     let authority_file = env.keypair_file(&env.authority);
@@ -354,11 +380,12 @@ fn authority_as_inner_non_signer_is_not_forwarded(with_signer: bool, expected: O
     let env = SubmitTestEnv::new();
     let authority = env.authority.pubkey();
     let signer = programmatic_signer(&authority);
-    let inner = Message::new_with_blockhash(
+    let inner = v1::Message::try_compile(
+        &signer,
         &[transfer(&signer, &authority, 1)],
-        Some(&signer),
-        &Hash::new_unique(),
-    );
+        Hash::new_unique(),
+    )
+    .unwrap();
     let message = execute_message(&inner, &env.nonce_account, &signer, &[authority]);
     let authority_entry = signature_entry(&env.authority, &message);
     let authority_file = env.keypair_file(&env.authority);
@@ -379,11 +406,12 @@ fn rejects_message_signer_unused_by_execute() {
     let authority = env.authority.pubkey();
     let signer = programmatic_signer(&authority);
     let unused = Address::new_unique();
-    let inner = Message::new_with_blockhash(
+    let inner = v1::Message::try_compile(
+        &signer,
         &[transfer(&signer, &Address::new_unique(), 1)],
-        Some(&signer),
-        &Hash::new_unique(),
-    );
+        Hash::new_unique(),
+    )
+    .unwrap();
     // `transaction sign` never adds a signer the Execute instruction does not use.
     let message = wrapped_message(
         &execute(&env.nonce_account, &signer, &inner),

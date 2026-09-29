@@ -1,7 +1,7 @@
 use {
     base64::{Engine, prelude::BASE64_STANDARD},
     solana_address::Address,
-    solana_message::{VersionedMessage, legacy::Message},
+    solana_message::{VersionedMessage, v1},
     solana_signer::Signer,
     spl_ed25519_signer_client::{ProgrammaticSigner, message::wrapped_message},
     spl_message_executor_client::instruction::execute,
@@ -16,7 +16,7 @@ pub fn programmatic_signer(authority: &Address) -> Address {
 /// the authorities plus every inner signer and the nonce authority that is not one of their
 /// derived signers.
 pub fn execute_message(
-    inner: &Message,
+    inner: &v1::Message,
     nonce_account: &Address,
     nonce_authority: &Address,
     authorities: &[Address],

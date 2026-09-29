@@ -10,7 +10,7 @@ use {
     solana_address::Address,
     solana_hash::Hash,
     solana_keypair::Keypair,
-    solana_message::legacy::Message,
+    solana_message::v1,
     solana_program_pack::Pack,
     solana_signer::Signer,
     solana_system_interface::instruction::create_account,
@@ -94,7 +94,7 @@ async fn create_token_accounts(
     (mint.pubkey(), source.pubkey(), destination.pubkey())
 }
 
-fn simulate(env: &TestEnv, test: &SubmitTest, inner: &Message, extra: &[&str]) -> Output {
+fn simulate(env: &TestEnv, test: &SubmitTest, inner: &v1::Message, extra: &[&str]) -> Output {
     let encoded = BASE64_STANDARD.encode(inner.serialize());
     let nonce_account = test.nonce_account.to_string();
     let mut args = vec![
@@ -280,7 +280,8 @@ pub async fn simulates_token_transfer(env: &TestEnv) {
     let (mint, source, destination) = create_token_accounts(env, &signer, &recipient).await;
     let test = SubmitTest::new(env, &signer).await;
     let amount = 1_500_000;
-    let inner = Message::new_with_blockhash(
+    let inner = v1::Message::try_compile(
+        &signer,
         &[transfer_checked(
             &spl_token_interface::id(),
             &source,
@@ -292,9 +293,9 @@ pub async fn simulates_token_transfer(env: &TestEnv) {
             DECIMALS,
         )
         .unwrap()],
-        Some(&signer),
-        &test.nonce,
-    );
+        test.nonce,
+    )
+    .unwrap();
 
     let output = simulate(env, &test, &inner, &[]);
     let stderr = String::from_utf8_lossy(&output.stderr);

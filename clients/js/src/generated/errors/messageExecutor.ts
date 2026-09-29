@@ -18,20 +18,26 @@ export const MESSAGE_EXECUTOR_ERROR__INVALID_NONCE_ACCOUNT = 0x0; // 0
 export const MESSAGE_EXECUTOR_ERROR__INVALID_MESSAGE = 0x1; // 1
 export const MESSAGE_EXECUTOR_ERROR__MESSAGE_ACCOUNTS_MISMATCH = 0x2; // 2
 export const MESSAGE_EXECUTOR_ERROR__NONCE_MISMATCH = 0x3; // 3
+export const MESSAGE_EXECUTOR_ERROR__UNSUPPORTED_MESSAGE_VERSION = 0x4; // 4
+export const MESSAGE_EXECUTOR_ERROR__UNSUPPORTED_TRANSACTION_CONFIG = 0x5; // 5
 
 export type MessageExecutorError =
     | typeof MESSAGE_EXECUTOR_ERROR__INVALID_MESSAGE
     | typeof MESSAGE_EXECUTOR_ERROR__INVALID_NONCE_ACCOUNT
     | typeof MESSAGE_EXECUTOR_ERROR__MESSAGE_ACCOUNTS_MISMATCH
-    | typeof MESSAGE_EXECUTOR_ERROR__NONCE_MISMATCH;
+    | typeof MESSAGE_EXECUTOR_ERROR__NONCE_MISMATCH
+    | typeof MESSAGE_EXECUTOR_ERROR__UNSUPPORTED_MESSAGE_VERSION
+    | typeof MESSAGE_EXECUTOR_ERROR__UNSUPPORTED_TRANSACTION_CONFIG;
 
 let messageExecutorErrorMessages: Record<MessageExecutorError, string> | undefined;
 if (process.env['NODE_ENV'] !== 'production') {
     messageExecutorErrorMessages = {
-        [MESSAGE_EXECUTOR_ERROR__INVALID_MESSAGE]: `The legacy message fails sanitization or contains duplicate keys`,
+        [MESSAGE_EXECUTOR_ERROR__INVALID_MESSAGE]: `The v1 message fails sanitization or contains duplicate keys`,
         [MESSAGE_EXECUTOR_ERROR__INVALID_NONCE_ACCOUNT]: `The nonce account data could not be decoded as nonce state`,
         [MESSAGE_EXECUTOR_ERROR__MESSAGE_ACCOUNTS_MISMATCH]: `The passed accounts do not match the wrapped message's account keys`,
         [MESSAGE_EXECUTOR_ERROR__NONCE_MISMATCH]: `The message's recent blockhash does not match the stored nonce`,
+        [MESSAGE_EXECUTOR_ERROR__UNSUPPORTED_MESSAGE_VERSION]: `The wrapped message is not a v1 message`,
+        [MESSAGE_EXECUTOR_ERROR__UNSUPPORTED_TRANSACTION_CONFIG]: `The wrapped message sets transaction config fields`,
     };
 }
 

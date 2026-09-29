@@ -19,7 +19,7 @@ use {
 
 #[derive(Debug, Args)]
 pub(super) struct SignCommand {
-    /// Base64-encoded legacy inner transaction message.
+    /// Base64-encoded v1 inner transaction message.
     #[clap(long)]
     inner_message: String,
 
@@ -59,7 +59,7 @@ pub(super) struct SignCommand {
 
 pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -> Result<String> {
     let mut inner = read_inner_message(&command.inner_message)?;
-    inner.recent_blockhash = command.nonce_hash;
+    inner.lifetime_specifier = command.nonce_hash;
     // Sort/dedupe so participants construct identical messages.
     let mut authorities = command.authority;
     authorities.sort_unstable();

@@ -23,7 +23,7 @@ use {
 
 #[derive(Debug, Args)]
 pub(super) struct SimulateCommand {
-    /// Base64-encoded legacy inner transaction message.
+    /// Base64-encoded v1 inner transaction message.
     inner_message: String,
 
     /// SPL nonce account protecting this execution.
@@ -58,7 +58,7 @@ pub(super) async fn run(
     let nonce_authority = command.nonce_authority.unwrap_or(nonce.authority);
     let nonce_hash = command.nonce_hash.unwrap_or(nonce.nonce);
     let mut inner = read_inner_message(&command.inner_message)?;
-    inner.recent_blockhash = nonce_hash;
+    inner.lifetime_specifier = nonce_hash;
     ensure!(
         nonce_hash == nonce.nonce,
         "expected nonce value {nonce_hash}, but nonce account {} currently has {}",
