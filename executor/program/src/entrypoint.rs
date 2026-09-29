@@ -4,7 +4,7 @@ use {
         AccountView, Address, ProgramResult, default_allocator, nostd_panic_handler,
         program_entrypoint,
     },
-    spl_legacy_message_executor_interface::instruction::Instruction,
+    spl_message_executor_interface::instruction::Instruction,
 };
 
 program_entrypoint!(process_instruction);

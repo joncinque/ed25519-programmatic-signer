@@ -9,44 +9,38 @@ use solana_program_error::ProgramError;
 #[repr(u32)]
 #[cfg_attr(feature = "codama", derive(CodamaErrors))]
 pub enum Error {
-    /// The wrapped message failed sanitization.
+    /// The authorization message failed sanitization.
     #[cfg_attr(
         feature = "codama",
-        codama(error(message = "The wrapped message failed sanitization"))
+        codama(error(message = "The authorization message failed sanitization"))
     )]
-    InvalidWrappedMessage = 0,
-    /// The wrapped message must contain exactly one executor instruction.
+    InvalidMessage = 0,
+    /// The authorization message must contain exactly one executor instruction.
     #[cfg_attr(
         feature = "codama",
         codama(error(
-            message = "The wrapped message must contain exactly one executor instruction"
+            message = "The authorization message must contain exactly one executor instruction"
         ))
     )]
     InvalidExecutorInstructionCount = 1,
-    /// A Submit account differs from the wrapped message key at the same index.
+    /// A Submit account differs from the authorization message key at the same index.
     #[cfg_attr(
         feature = "codama",
         codama(error(
-            message = "A Submit account differs from the wrapped message key at the same index"
+            message = "A Submit account differs from the authorization message key at the same \
+                       index"
         ))
     )]
     AccountKeyMismatch = 2,
-    /// An authority signature failed verification against the wrapped message.
+    /// An authority signature failed verification against the authorization message.
     #[cfg_attr(
         feature = "codama",
-        codama(error(
-            message = "An authority signature failed verification against the wrapped message"
-        ))
+        codama(
+            error(message = "An authority signature failed verification against the \
+                             authorization message")
+        )
     )]
     InvalidSignature = 3,
-    /// The executor references an index outside the static account-key list.
-    #[cfg_attr(
-        feature = "codama",
-        codama(error(
-            message = "The executor references an index outside the static account-key list"
-        ))
-    )]
-    InvalidExecutorAccountIndex = 4,
     /// The executor program and instruction pair is not permitted by this signer program.
     #[cfg_attr(
         feature = "codama",
@@ -55,15 +49,28 @@ pub enum Error {
                        program"
         ))
     )]
-    DisallowedExecutorInstruction = 5,
-    /// The authority signature count does not match the wrapped message.
+    DisallowedExecutorInstruction = 4,
+    /// The authority signature count does not match the authorization message.
     #[cfg_attr(
         feature = "codama",
         codama(error(
-            message = "The authority signature count does not match the wrapped message."
+            message = "The authority signature count does not match the authorization message."
         ))
     )]
-    InvalidSignatureCount = 6,
+    InvalidSignatureCount = 5,
+    /// The authorization message is not a v1 message.
+    #[cfg_attr(
+        feature = "codama",
+        codama(error(message = "The authorization message is not a v1 message"))
+    )]
+    UnsupportedMessageVersion = 6,
+    /// The authorization message sets transaction config fields. The authorization message is never
+    /// executed as a transaction, so they would have no effect.
+    #[cfg_attr(
+        feature = "codama",
+        codama(error(message = "The authorization message sets transaction config fields"))
+    )]
+    UnsupportedTransactionConfig = 7,
 }
 
 impl From<Error> for ProgramError {

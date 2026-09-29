@@ -1,6 +1,6 @@
 use {
     crate::common::{
-        execute::{encode, execute_message, programmatic_signer, signature_entry},
+        execute::{build_authorization_message, encode, programmatic_signer, signature_entry},
         helpers::run_psigner_with_input,
     },
     solana_address::Address,
@@ -8,12 +8,12 @@ use {
     solana_hash::Hash,
     solana_instruction::{AccountMeta, Instruction},
     solana_keypair::{Keypair, write_keypair_file},
-    solana_message::{VersionedMessage, legacy::Message},
+    solana_message::{VersionedMessage, legacy, v1},
     solana_signer::Signer,
     solana_system_interface::instruction::transfer,
-    spl_ed25519_signer_client::message::wrapped_message,
-    spl_legacy_message_executor_client::instruction::execute,
-    spl_legacy_message_executor_interface::instruction::Instruction as ExecutorInstruction,
+    spl_ed25519_signer_client::message::authorization_message,
+    spl_message_executor_client::instruction::execute,
+    spl_message_executor_interface::instruction::Instruction as ExecutorInstruction,
     std::{path::PathBuf, process::Output},
     tempfile::TempDir,
     test_case::test_case,
@@ -21,8 +21,8 @@ use {
 
 pub mod common;
 
-/// An execute message signed by one PDA authority, whose derived signer is the nonce
-/// authority, and one ordinary inner signer forwarded from the relay transaction.
+/// An authorization message signed by one PDA authority, whose derived signer is the nonce
+/// authority, and one ordinary execution message signer forwarded from the relay transaction.
 struct SubmitTestEnv {
     directory: TempDir,
     config_file_path: String,
@@ -58,16 +58,17 @@ impl SubmitTestEnv {
         let nonce_account = Address::new_unique();
         let nonce_authority = programmatic_signer(&authority.pubkey());
         let recipient = Address::new_unique();
-        let inner = Message::new_with_blockhash(
+        let execution_message = v1::Message::try_compile(
+            &nonce_authority,
             &[
                 transfer(&nonce_authority, &recipient, 1),
                 transfer(&ordinary.pubkey(), &recipient, 1),
             ],
-            Some(&nonce_authority),
-            &Hash::new_unique(),
-        );
-        let message = execute_message(
-            &inner,
+            Hash::new_unique(),
+        )
+        .unwrap();
+        let message = build_authorization_message(
+            &execution_message,
             &nonce_account,
             &nonce_authority,
             &[authority.pubkey()],
@@ -95,14 +96,14 @@ impl SubmitTestEnv {
         signature_entry(&self.authority, &self.message)
     }
 
-    fn submit(&self, execute_message: &str, extra: &[&str]) -> Output {
+    fn submit(&self, authorization_message: &str, extra: &[&str]) -> Output {
         let mut args = vec![
             "-C",
             &self.config_file_path,
             "transaction",
             "submit",
-            "--execute-message",
-            execute_message,
+            "--authorization-message",
+            authorization_message,
         ];
         args.extend_from_slice(extra);
         run_psigner_with_input(&args, "")
@@ -132,9 +133,9 @@ fn assert_failure(output: &Output, expected: &str) {
 fn accepts_authority_signatures_and_forwarded_signers() {
     let env = SubmitTestEnv::new();
     let output = env.submit_message(&[
-        "--authority",
-        &env.authority_entry(),
         "--signer",
+        &env.authority_entry(),
+        "--relay-signer",
         &env.keypair_file(&env.ordinary),
     ]);
     env.assert_passes_offline_checks(&output);
@@ -144,7 +145,7 @@ fn accepts_authority_signatures_and_forwarded_signers() {
 fn accepts_fee_payer_as_forwarded_signer() {
     let env = SubmitTestEnv::new();
     let output = env.submit_message(&[
-        "--authority",
+        "--signer",
         &env.authority_entry(),
         "--fee-payer",
         &env.keypair_file(&env.ordinary),
@@ -152,18 +153,47 @@ fn accepts_fee_payer_as_forwarded_signer() {
     env.assert_passes_offline_checks(&output);
 }
 
-#[test_case("!", "invalid base64 execute message"; "invalid base64")]
-#[test_case("", "invalid serialized execute message"; "empty message")]
-#[test_case("AA==", "invalid serialized execute message"; "truncated message")]
+#[test_case("!", "invalid base64 authorization message"; "invalid base64")]
+#[test_case("", "invalid serialized authorization message"; "empty message")]
+#[test_case("AA==", "invalid serialized authorization message"; "truncated message")]
 fn rejects_invalid_message_encoding(encoded: &str, expected: &str) {
     let env = SubmitTestEnv::new();
     assert_failure(&env.submit(encoded, &[]), expected);
 }
 
+#[test_case(
+    |message| VersionedMessage::Legacy(legacy::Message {
+        header: message.header,
+        account_keys: message.account_keys,
+        recent_blockhash: message.lifetime_specifier,
+        instructions: message.instructions,
+    }),
+    "the signer program supports only v1 authorization messages";
+    "legacy"
+)]
+#[test_case(
+    |message| VersionedMessage::V1(v1::Message {
+        config: v1::TransactionConfig::default().with_priority_fee(1),
+        ..message
+    }),
+    "authorization message must not set transaction config fields";
+    "transaction config"
+)]
+fn rejects_authorization_message_the_signer_cannot_submit(
+    convert: fn(v1::Message) -> VersionedMessage,
+    expected: &str,
+) {
+    let env = SubmitTestEnv::new();
+    let VersionedMessage::V1(message) = env.message.clone() else {
+        panic!("expected a v1 authorization message");
+    };
+    assert_failure(&env.submit(&encode(&convert(message)), &[]), expected);
+}
+
 #[test]
 fn rejects_non_executor_instruction() {
     let env = SubmitTestEnv::new();
-    let message = wrapped_message(
+    let message = authorization_message(
         &transfer(&env.authority.pubkey(), &Address::new_unique(), 1),
         &[env.authority.pubkey()],
     );
@@ -177,40 +207,67 @@ fn rejects_non_executor_instruction() {
 fn rejects_execute_without_nonce_accounts() {
     let env = SubmitTestEnv::new();
     let instruction = Instruction::new_with_wincode(
-        spl_legacy_message_executor_interface::id(),
-        &ExecutorInstruction::Execute(Message::default()),
+        spl_message_executor_interface::id(),
+        &ExecutorInstruction::Execute(VersionedMessage::V1(v1::Message::default())),
         vec![AccountMeta::new(Address::new_unique(), false)],
     );
-    let message = wrapped_message(&instruction, &[env.authority.pubkey()]);
+    let message = authorization_message(&instruction, &[env.authority.pubkey()]);
     assert_failure(
         &env.submit(&encode(&message), &[]),
         "expected the nonce authority, nonce account, and SPL Nonce program in Execute accounts",
     );
 }
 
+#[test_case(
+    VersionedMessage::Legacy(legacy::Message::default()),
+    "the executor supports only v1 execution messages";
+    "legacy"
+)]
+#[test_case(
+    VersionedMessage::V1(v1::Message {
+        config: v1::TransactionConfig::default().with_priority_fee(1),
+        ..v1::Message::default()
+    }),
+    "execution message must not set transaction config fields";
+    "transaction config"
+)]
+fn rejects_execution_message_the_executor_cannot_invoke(
+    execution_message: VersionedMessage,
+    expected: &str,
+) {
+    let env = SubmitTestEnv::new();
+    let instruction = Instruction::new_with_wincode(
+        spl_message_executor_interface::id(),
+        &ExecutorInstruction::Execute(execution_message),
+        vec![AccountMeta::new(Address::new_unique(), false)],
+    );
+    let message = authorization_message(&instruction, &[env.authority.pubkey()]);
+    assert_failure(&env.submit(&encode(&message), &[]), expected);
+}
+
 #[test_case("missing separator", "invalid authority: expected ADDRESS=SIGNATURE"; "missing separator")]
 #[test_case("invalid=invalid", "invalid authority address"; "invalid address")]
 #[test_case("11111111111111111111111111111111=invalid", "invalid authority signature"; "invalid signature")]
-fn rejects_malformed_authority_args(entry: &str, expected: &str) {
+fn rejects_malformed_signer_args(entry: &str, expected: &str) {
     let env = SubmitTestEnv::new();
-    assert_failure(&env.submit_message(&["--authority", entry]), expected);
+    assert_failure(&env.submit_message(&["--signer", entry]), expected);
 }
 
 #[test]
-fn rejects_authority_arg_not_on_execute_message() {
+fn rejects_signer_arg_not_on_authorization_message() {
     let env = SubmitTestEnv::new();
     let stranger = Keypair::new();
     assert_failure(
-        &env.submit_message(&["--authority", &signature_entry(&stranger, &env.message)]),
+        &env.submit_message(&["--signer", &signature_entry(&stranger, &env.message)]),
         &format!(
-            "{} is not a signer on the execute message",
+            "{} is not a signer on the authorization message",
             stranger.pubkey()
         ),
     );
 }
 
 #[test]
-fn rejects_authority_arg_for_a_different_message() {
+fn rejects_signer_arg_for_a_different_message() {
     let env = SubmitTestEnv::new();
     let other = SubmitTestEnv::new();
     let entry = format!(
@@ -219,16 +276,16 @@ fn rejects_authority_arg_for_a_different_message() {
         env.authority.sign_message(&other.message.serialize())
     );
     assert_failure(
-        &env.submit_message(&["--authority", &entry]),
+        &env.submit_message(&["--signer", &entry]),
         &format!("invalid signature for authority {}", env.authority.pubkey()),
     );
 }
 
 #[test]
-fn rejects_authority_without_authority_arg() {
+fn rejects_authority_without_signer_arg() {
     let env = SubmitTestEnv::new();
     assert_failure(
-        &env.submit_message(&["--signer", &env.keypair_file(&env.ordinary)]),
+        &env.submit_message(&["--relay-signer", &env.keypair_file(&env.ordinary)]),
         &format!(
             "missing signature for authority {}, authorities sign with `transaction sign`",
             env.authority.pubkey()
@@ -238,19 +295,24 @@ fn rejects_authority_without_authority_arg() {
 
 #[test_case(false; "unsigned")]
 #[test_case(true; "already signed")]
-fn rejects_signer_arg_for_non_forwarded_authority(with_signature: bool) {
+fn rejects_relay_signer_arg_for_non_forwarded_authority(with_signature: bool) {
     let env = SubmitTestEnv::new();
     let authority_entry = env.authority_entry();
     let authority_file = env.keypair_file(&env.authority);
     let ordinary_file = env.keypair_file(&env.ordinary);
-    let mut args = vec!["--signer", &authority_file, "--signer", &ordinary_file];
+    let mut args = vec![
+        "--relay-signer",
+        &authority_file,
+        "--relay-signer",
+        &ordinary_file,
+    ];
     if with_signature {
-        args.extend(["--authority", &authority_entry]);
+        args.extend(["--signer", &authority_entry]);
     }
     assert_failure(
         &env.submit_message(&args),
         &format!(
-            "{} is not a forwarded signer on the execute message, PDA authorities sign with \
+            "{} is not a forwarded signer on the authorization message, PDA authorities sign with \
              `transaction sign`",
             env.authority.pubkey()
         ),
@@ -258,87 +320,94 @@ fn rejects_signer_arg_for_non_forwarded_authority(with_signature: bool) {
 }
 
 #[test]
-fn rejects_authority_arg_for_non_authority() {
+fn rejects_signer_arg_for_non_authority() {
     let env = SubmitTestEnv::new();
     assert_failure(
         &env.submit_message(&[
-            "--authority",
-            &env.authority_entry(),
-            "--authority",
-            &signature_entry(&env.ordinary, &env.message),
             "--signer",
+            &env.authority_entry(),
+            "--signer",
+            &signature_entry(&env.ordinary, &env.message),
+            "--relay-signer",
             &env.keypair_file(&env.ordinary),
         ]),
         &format!(
-            "{} is not a PDA authority on the execute message; pass it with --signer",
+            "{} is not a PDA authority on the authorization message; pass it with --relay-signer",
             env.ordinary.pubkey()
         ),
     );
 }
 
 #[test]
-fn rejects_forwarded_signer_without_signer_arg() {
+fn rejects_forwarded_signer_without_relay_signer_arg() {
     let env = SubmitTestEnv::new();
     assert_failure(
-        &env.submit_message(&["--authority", &env.authority_entry()]),
+        &env.submit_message(&["--signer", &env.authority_entry()]),
         &format!(
-            "{} is a forwarded signer and must sign the relay transaction; pass it with --signer",
+            "{} is a forwarded signer and must sign the relay transaction; pass it with \
+             --relay-signer",
             env.ordinary.pubkey()
         ),
     );
 }
 
 #[test]
-fn rejects_signer_arg_not_on_execute_message() {
+fn rejects_relay_signer_arg_not_on_authorization_message() {
     let env = SubmitTestEnv::new();
     let stranger = Keypair::new();
     assert_failure(
         &env.submit_message(&[
-            "--authority",
+            "--signer",
             &env.authority_entry(),
-            "--signer",
+            "--relay-signer",
             &env.keypair_file(&env.ordinary),
-            "--signer",
+            "--relay-signer",
             &env.keypair_file(&stranger),
         ]),
         &format!(
-            "{} is not a forwarded signer on the execute message",
+            "{} is not a forwarded signer on the authorization message",
             stranger.pubkey()
         ),
     );
 }
 
-/// An authority that is also an inner signer needs its `transaction sign` signature for the
-/// execute message and a local signer for the relay transaction.
-#[test_case(true, true, None; "authority and signer")]
-#[test_case(true, false, Some("{} is a forwarded signer and must sign the relay transaction"); "authority only")]
-#[test_case(false, true, Some("missing signature for authority {}"); "signer only")]
-fn forwarded_authority_needs_authority_and_signer_args(
+/// An authority that is also an execution message signer needs its `transaction sign` signature
+/// for the authorization message and a local signer for the relay transaction.
+#[test_case(true, true, None; "signer and relay signer")]
+#[test_case(true, false, Some("{} is a forwarded signer and must sign the relay transaction"); "signer only")]
+#[test_case(false, true, Some("missing signature for authority {}"); "relay signer only")]
+fn forwarded_authority_needs_signer_and_relay_signer_args(
     with_signature: bool,
-    with_signer: bool,
+    with_relay_signer: bool,
     expected: Option<&str>,
 ) {
     let env = SubmitTestEnv::new();
     let authority = env.authority.pubkey();
     let signer = programmatic_signer(&authority);
     let recipient = Address::new_unique();
-    let inner = Message::new_with_blockhash(
+    let execution_message = v1::Message::try_compile(
+        &signer,
         &[
             transfer(&signer, &recipient, 1),
             transfer(&authority, &recipient, 1),
         ],
-        Some(&signer),
-        &Hash::new_unique(),
+        Hash::new_unique(),
+    )
+    .unwrap();
+    let message = build_authorization_message(
+        &execution_message,
+        &env.nonce_account,
+        &signer,
+        &[authority],
     );
-    let message = execute_message(&inner, &env.nonce_account, &signer, &[authority]);
     let authority_entry = signature_entry(&env.authority, &message);
     let authority_file = env.keypair_file(&env.authority);
     let mut args = vec![];
     if with_signature {
-        args.extend(["--authority", authority_entry.as_str()]);
+        args.extend(["--signer", authority_entry.as_str()]);
     }
-    if with_signer {
-        args.extend(["--signer", authority_file.as_str()]);
+    if with_relay_signer {
+        args.extend(["--relay-signer", authority_file.as_str()]);
     }
     let output = env.submit(&encode(&message), &args);
     match expected {
@@ -348,23 +417,32 @@ fn forwarded_authority_needs_authority_and_signer_args(
 }
 
 /// An authority whose own address the executor uses only as a non-signer is not forwarded.
-#[test_case(false, None; "authority only")]
-#[test_case(true, Some("{} is not a forwarded signer on the execute message, PDA authorities sign with `transaction sign`"); "with signer")]
-fn authority_as_inner_non_signer_is_not_forwarded(with_signer: bool, expected: Option<&str>) {
+#[test_case(false, None; "signer only")]
+#[test_case(true, Some("{} is not a forwarded signer on the authorization message, PDA authorities sign with `transaction sign`"); "with relay signer")]
+fn authority_as_execution_message_non_signer_is_not_forwarded(
+    with_relay_signer: bool,
+    expected: Option<&str>,
+) {
     let env = SubmitTestEnv::new();
     let authority = env.authority.pubkey();
     let signer = programmatic_signer(&authority);
-    let inner = Message::new_with_blockhash(
+    let execution_message = v1::Message::try_compile(
+        &signer,
         &[transfer(&signer, &authority, 1)],
-        Some(&signer),
-        &Hash::new_unique(),
+        Hash::new_unique(),
+    )
+    .unwrap();
+    let message = build_authorization_message(
+        &execution_message,
+        &env.nonce_account,
+        &signer,
+        &[authority],
     );
-    let message = execute_message(&inner, &env.nonce_account, &signer, &[authority]);
     let authority_entry = signature_entry(&env.authority, &message);
     let authority_file = env.keypair_file(&env.authority);
-    let mut args = vec!["--authority", authority_entry.as_str()];
-    if with_signer {
-        args.extend(["--signer", authority_file.as_str()]);
+    let mut args = vec!["--signer", authority_entry.as_str()];
+    if with_relay_signer {
+        args.extend(["--relay-signer", authority_file.as_str()]);
     }
     let output = env.submit(&encode(&message), &args);
     match expected {
@@ -379,20 +457,21 @@ fn rejects_message_signer_unused_by_execute() {
     let authority = env.authority.pubkey();
     let signer = programmatic_signer(&authority);
     let unused = Address::new_unique();
-    let inner = Message::new_with_blockhash(
+    let execution_message = v1::Message::try_compile(
+        &signer,
         &[transfer(&signer, &Address::new_unique(), 1)],
-        Some(&signer),
-        &Hash::new_unique(),
-    );
+        Hash::new_unique(),
+    )
+    .unwrap();
     // `transaction sign` never adds a signer the Execute instruction does not use.
-    let message = wrapped_message(
-        &execute(&env.nonce_account, &signer, &inner),
+    let message = authorization_message(
+        &execute(&env.nonce_account, &signer, &execution_message),
         &[authority, unused],
     );
     assert_failure(
         &env.submit(
             &encode(&message),
-            &["--authority", &signature_entry(&env.authority, &message)],
+            &["--signer", &signature_entry(&env.authority, &message)],
         ),
         &format!("{unused} is neither a PDA authority nor a signer the executor uses"),
     );

@@ -8,7 +8,7 @@ use {
     spl_ed25519_signer_interface::instruction::Instruction as SignerInstruction,
 };
 
-/// Builds the `Submit` instruction from signatures and their signed message.
+/// Builds the `Submit` instruction from authority signatures and their authorization message.
 pub fn submit(signatures: Vec<Signature>, message: VersionedMessage) -> Instruction {
     let accounts = message
         .static_account_keys()

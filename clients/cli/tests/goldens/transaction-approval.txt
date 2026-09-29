@@ -1,18 +1,18 @@
-=== Authorization ===
-Message hash: EWPpXkCtKmfN2BoegLXDwTb6iJUYJmuAA8VUSJJnCuJ4
+=== Signing ===
+Message hash: CKoZ2gaq6zomRS3XLFWgk5CBXxYeQkWKy58SExhQML6S
 PDA promotion authorities:
   AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9 (derived signer: 3jCYn5zriQtvK6iEkWyDc3M6dkHvmR9XccrZyjJF96tF)
 
 === Replay protection ===
 SPL nonce account address: 8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR
 Nonce authority: 3jCYn5zriQtvK6iEkWyDc3M6dkHvmR9XccrZyjJF96tF
-Expected nonce value (inner message's recent blockhash): YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf
+Expected nonce value (execution message's recent blockhash): YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf
 
-=== Outer message ===
+=== Authorization message ===
 Your signatures authorize this Execute call, including its accounts, permissions,
-and the inner message.
+and the execution message.
 
-Legacy message:
+v1 message:
 {
   "header": {
     "numRequiredSignatures": 1,
@@ -40,14 +40,20 @@ Legacy message:
         3,
         6
       ],
-      "data": "187PYrYozuWSemSRti1zzcgAELjnFK3PAGyT3Q6vNPXj8qE77ET9MbgyrCGFCtd4EQL8W9Fpx6KJF9vBYSikabbcfDZ1Gtvxx7rBG5cDDHdRWV6D8oEhmVi83NQvjW3ce1R9B9e1MzzzkHGaomZs7nBG7vXKxsm3X2Fyctpvx869GVvjY5FMT6muaYfQj1kgGDdhd3eTiwqpT",
+      "data": "1bm15vGCmstjf134AARVYmBoKBdVgTo9ixtMzP2JZqcf3b8qGALaXhZaRRYMPmgGA3DG4E11MQDTvDLhWme2RqoWxNv2UjAJHq7CivKZhDBiH5GC5qoT7fCQ3ea6qSfET2zFqjto7FoF257Y9KXBBgnxMURbWREC2Y52gkaZY64CUxwZufTToKBy5hSHqUHpjAcjLjtJPVosnfQYMoN9Nw",
       "stackHeight": 1
     }
-  ]
+  ],
+  "transactionConfig": {
+    "priorityFee": null,
+    "computeUnitLimit": null,
+    "loadedAccountsDataSizeLimit": null,
+    "heapSize": null
+  }
 }
 
-=== Inner message (what the executor program invokes via CPI) ===
-Legacy message:
+=== Execution message (what the executor program invokes via CPI) ===
+v1 message:
 {
   "accountKeys": [
     {
@@ -84,8 +90,14 @@ Legacy message:
       },
       "stackHeight": 1
     }
-  ]
+  ],
+  "transactionConfig": {
+    "priorityFee": null,
+    "computeUnitLimit": null,
+    "loadedAccountsDataSizeLimit": null,
+    "heapSize": null
+  }
 }
 
-Signing returns addresses, signatures, forwarded signers, and the base64 Execute message. Nothing is submitted.
+Signing returns addresses, signatures, forwarded signers, and the base64 authorization message. Nothing is submitted.
 Sign this message for AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9? [y/N]

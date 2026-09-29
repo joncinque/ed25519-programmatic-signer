@@ -4,14 +4,15 @@ use {
     solana_address::Address,
     solana_cli_config::Config as SolanaConfig,
     solana_hash::Hash,
+    solana_instruction::AccountMeta,
     solana_keypair::{Keypair, write_keypair_file},
-    solana_message::{VersionedMessage, legacy::Message, v0},
+    solana_message::{VersionedMessage, legacy, v0, v1},
     solana_signature::Signature,
     solana_signer::Signer,
     solana_system_interface::instruction::transfer,
-    spl_ed25519_signer_client::{ProgrammaticSigner, message::wrapped_message},
-    spl_legacy_message_executor_client::instruction::execute,
-    spl_legacy_message_executor_interface::instruction::Instruction as ExecutorInstruction,
+    spl_ed25519_signer_client::{ProgrammaticSigner, message::authorization_message},
+    spl_message_executor_client::instruction::execute,
+    spl_message_executor_interface::instruction::Instruction as ExecutorInstruction,
     std::{fs, str::FromStr},
     tempfile::TempDir,
     test_case::test_case,
@@ -24,7 +25,7 @@ struct SignTestEnv {
     config: String,
     authority: Keypair,
     authorities: Vec<String>,
-    inner: Message,
+    execution_message: v1::Message,
     encoded: String,
     nonce_account: String,
     nonce_hash: String,
@@ -55,14 +56,15 @@ impl SignTestEnv {
             &spl_ed25519_signer_client::id(),
             &authority.pubkey(),
         );
-        let inner = Message::new_with_blockhash(
+        let execution_message = v1::Message::try_compile(
+            &pda,
             &[transfer(&pda, &Address::new_from_array([3; 32]), 1)],
-            None,
-            &Hash::new_from_array([99; 32]),
-        );
+            Hash::new_from_array([99; 32]),
+        )
+        .unwrap();
         Self {
-            encoded: BASE64_STANDARD.encode(inner.serialize()),
-            inner,
+            encoded: BASE64_STANDARD.encode(execution_message.serialize()),
+            execution_message,
             directory,
             config,
             authorities: vec![authority.pubkey().to_string()],
@@ -86,7 +88,7 @@ impl SignTestEnv {
             &self.config,
             "transaction",
             "sign",
-            "--inner-message",
+            "--execution-message",
             &self.encoded,
             "--nonce-account",
             &self.nonce_account,
@@ -103,16 +105,16 @@ impl SignTestEnv {
     }
 
     fn expected(&self, authorities: &[Address]) -> VersionedMessage {
-        let mut inner = self.inner.clone();
-        inner.recent_blockhash = self.nonce_hash.parse().unwrap();
+        let mut execution_message = self.execution_message.clone();
+        execution_message.lifetime_specifier = self.nonce_hash.parse().unwrap();
         let mut authorities = authorities.to_vec();
         authorities.sort_unstable();
         authorities.dedup();
-        wrapped_message(
+        authorization_message(
             &execute(
                 &self.nonce_account.parse().unwrap(),
                 &self.nonce_authority.parse().unwrap(),
-                &inner,
+                &execution_message,
             ),
             &authorities,
         )
@@ -145,7 +147,7 @@ fn approval_display_matches_golden() {
 
 #[test_case("json"; "json")]
 #[test_case("json-compact"; "compact")]
-fn signs_wrapped_message_offline(format: &str) {
+fn signs_authorization_message_offline(format: &str) {
     let env = SignTestEnv::new();
     let output = run_psigner(&env.args(&["--yes", "--output", format]));
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
@@ -156,11 +158,11 @@ fn signs_wrapped_message_offline(format: &str) {
             "address": env.authority.pubkey().to_string(),
             "signature": env.authority.sign_message(&expected.serialize()).to_string(),
             "forwarded_signers": [],
-            "execute_message": BASE64_STANDARD.encode(expected.serialize()),
+            "authorization_message": BASE64_STANDARD.encode(expected.serialize()),
         }])
     );
     let bytes = BASE64_STANDARD
-        .decode(value[0]["execute_message"].as_str().unwrap())
+        .decode(value[0]["authorization_message"].as_str().unwrap())
         .unwrap();
     let message: VersionedMessage = wincode::deserialize_exact(&bytes).unwrap();
     assert_eq!(message.recent_blockhash(), &Hash::default());
@@ -169,14 +171,23 @@ fn signs_wrapped_message_offline(format: &str) {
         message.static_account_keys()[usize::from(instruction.accounts[0])],
         env.nonce_authority.parse::<Address>().unwrap()
     );
-    let ExecutorInstruction::Execute(inner) =
-        ExecutorInstruction::try_from_bytes(&instruction.data).unwrap();
+    let ExecutorInstruction::Execute(VersionedMessage::V1(execution_message)) =
+        ExecutorInstruction::try_from_bytes(&instruction.data).unwrap()
+    else {
+        panic!("expected a v1 execution message");
+    };
     assert_eq!(
-        inner.recent_blockhash,
+        execution_message.lifetime_specifier,
         env.nonce_hash.parse::<Hash>().unwrap()
     );
-    assert_eq!(inner.instructions, env.inner.instructions);
-    assert_eq!(inner.account_keys, env.inner.account_keys);
+    assert_eq!(
+        execution_message.instructions,
+        env.execution_message.instructions
+    );
+    assert_eq!(
+        execution_message.account_keys,
+        env.execution_message.account_keys
+    );
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(stderr.contains(&format!("Nonce authority: {}", env.nonce_authority)));
     assert!(stderr.contains("Nothing is submitted."));
@@ -209,7 +220,7 @@ fn multiple_signers_sign_the_same_message_and_duplicates_are_ignored() {
         let signature = Signature::from_str(value["signature"].as_str().unwrap()).unwrap();
         assert!(signature.verify(key.pubkey().as_ref(), &expected.serialize()));
         assert_eq!(
-            value["execute_message"],
+            value["authorization_message"],
             BASE64_STANDARD.encode(expected.serialize())
         );
     }
@@ -269,9 +280,9 @@ fn confirmation_is_required_even_when_quiet(answer: &str, approved: bool) {
     assert_eq!(output.stdout.is_empty(), !approved);
 }
 
-#[test_case("!", "invalid base64 inner message"; "invalid base64")]
-#[test_case("", "invalid serialized inner message"; "empty")]
-#[test_case("AA==", "invalid serialized inner message"; "truncated")]
+#[test_case("!", "invalid base64 execution message"; "invalid base64")]
+#[test_case("", "invalid serialized execution message"; "empty")]
+#[test_case("AA==", "invalid serialized execution message"; "truncated")]
 fn rejects_invalid_encoding(encoded: &str, error: &str) {
     let mut env = SignTestEnv::new();
     env.encoded = encoded.into();
@@ -281,47 +292,68 @@ fn rejects_invalid_encoding(encoded: &str, error: &str) {
 #[test]
 fn rejects_trailing_bytes_before_loading_signer() {
     let mut env = SignTestEnv::new();
-    let mut bytes = env.inner.serialize();
+    let mut bytes = env.execution_message.serialize();
     bytes.push(0);
     env.encoded = BASE64_STANDARD.encode(bytes);
     fs::remove_file(env.directory.path().join("authority.json")).unwrap();
-    env.reject("invalid serialized inner message");
+    env.reject("invalid serialized execution message");
 }
 
-#[test]
-fn rejects_versioned_inner_message() {
+#[test_case(|message| VersionedMessage::Legacy(legacy::Message {
+    header: message.header,
+    account_keys: message.account_keys.clone(),
+    recent_blockhash: message.lifetime_specifier,
+    instructions: message.instructions.clone(),
+}); "legacy")]
+#[test_case(|message| VersionedMessage::V0(v0::Message {
+    header: message.header,
+    account_keys: message.account_keys.clone(),
+    recent_blockhash: message.lifetime_specifier,
+    instructions: message.instructions.clone(),
+    address_table_lookups: vec![],
+}); "v0")]
+fn rejects_non_v1_execution_message(convert: fn(&v1::Message) -> VersionedMessage) {
     let mut env = SignTestEnv::new();
-    env.encoded = BASE64_STANDARD.encode(
-        VersionedMessage::V0(v0::Message {
-            header: env.inner.header,
-            account_keys: env.inner.account_keys.clone(),
-            recent_blockhash: env.inner.recent_blockhash,
-            instructions: env.inner.instructions.clone(),
-            address_table_lookups: vec![],
-        })
-        .serialize(),
-    );
-    env.reject("supports only legacy inner messages");
+    env.encoded = BASE64_STANDARD.encode(convert(&env.execution_message).serialize());
+    env.reject("supports only v1 execution messages");
 }
 
-#[test_case(|m| m.instructions[0].program_id_index = u8::MAX, "invalid inner message"; "bad index")]
-#[test_case(|m| m.account_keys[1] = m.account_keys[0], "duplicate account keys"; "duplicate keys")]
-#[test_case(|m| { m.header.num_required_signatures = 127; }, "invalid inner message"; "bad header")]
-fn rejects_invalid_inner(mutate: fn(&mut Message), error: &str) {
+#[test_case(|m| m.instructions[0].program_id_index = u8::MAX, "invalid execution message"; "bad index")]
+#[test_case(|m| m.account_keys[1] = m.account_keys[0], "invalid execution message"; "duplicate keys")]
+#[test_case(|m| { m.header.num_required_signatures = 127; }, "invalid execution message"; "bad header")]
+#[test_case(
+    |m| m.config = v1::TransactionConfig::default().with_compute_unit_limit(1),
+    "execution message must not set transaction config fields";
+    "transaction config"
+)]
+fn rejects_invalid_execution_message(mutate: fn(&mut v1::Message), error: &str) {
     let mut env = SignTestEnv::new();
-    mutate(&mut env.inner);
-    env.encoded = BASE64_STANDARD.encode(env.inner.serialize());
+    mutate(&mut env.execution_message);
+    env.encoded = BASE64_STANDARD.encode(env.execution_message.serialize());
     env.reject(error);
 }
 
 #[test]
-fn rejects_too_many_wrapped_accounts_without_panicking() {
+fn rejects_too_many_authorization_accounts() {
     let mut env = SignTestEnv::new();
-    while env.inner.account_keys.len() < 256 {
-        env.inner.account_keys.push(Address::new_unique());
+    // The execution message sits at the v1 account limit, and the authorization message adds the
+    // nonce and executor accounts on top.
+    let pda = env.execution_message.account_keys[0];
+    let mut instruction = transfer(&pda, &Address::new_from_array([3; 32]), 1);
+    // The system program takes the last account key.
+    while instruction.accounts.len() < usize::from(v1::MAX_ADDRESSES) - 1 {
+        instruction
+            .accounts
+            .push(AccountMeta::new_readonly(Address::new_unique(), false));
     }
-    env.encoded = BASE64_STANDARD.encode(env.inner.serialize());
-    env.reject("too many accounts for the wrapped message");
+    env.execution_message =
+        v1::Message::try_compile(&pda, &[instruction], Hash::default()).unwrap();
+    assert_eq!(
+        env.execution_message.account_keys.len(),
+        usize::from(v1::MAX_ADDRESSES)
+    );
+    env.encoded = BASE64_STANDARD.encode(env.execution_message.serialize());
+    env.reject("too many addresses (max 64)");
 }
 
 #[test]
@@ -342,7 +374,7 @@ fn public_only_signer_cannot_emit_placeholder_signature() {
 
 #[test_case("account"; "nonce account")]
 #[test_case("hash"; "nonce hash")]
-#[test_case("authority"; "nonce authority outside inner message")]
+#[test_case("authority"; "nonce authority outside execution message")]
 fn signatures_bind_all_supplied_nonce_details(field: &str) {
     let mut env = SignTestEnv::new();
     let original = env.expected(&[env.authority.pubkey()]);
@@ -359,7 +391,7 @@ fn signatures_bind_all_supplied_nonce_details(field: &str) {
     assert!(signature.verify(env.authority.pubkey().as_ref(), &expected.serialize()));
     assert!(!signature.verify(env.authority.pubkey().as_ref(), &original.serialize()));
     assert_eq!(
-        values[0]["execute_message"],
+        values[0]["authorization_message"],
         BASE64_STANDARD.encode(expected.serialize())
     );
 }
@@ -389,11 +421,11 @@ fn independent_signers_produce_identical_messages() {
     assert_eq!(alice.len(), 1);
     assert_eq!(bob_values.len(), 1);
     assert_eq!(
-        alice[0]["execute_message"],
-        bob_values[0]["execute_message"]
+        alice[0]["authorization_message"],
+        bob_values[0]["authorization_message"]
     );
     let bytes = BASE64_STANDARD
-        .decode(alice[0]["execute_message"].as_str().unwrap())
+        .decode(alice[0]["authorization_message"].as_str().unwrap())
         .unwrap();
     let message: VersionedMessage = wincode::deserialize_exact(&bytes).unwrap();
     assert_eq!(message.header().num_required_signatures, 2);
@@ -422,7 +454,7 @@ fn requires_explicit_authorities() {
 #[test]
 fn rejects_too_many_authorities_before_loading_wallet() {
     let mut env = SignTestEnv::new();
-    env.authorities = (0..128)
+    env.authorities = (0..=v1::MAX_SIGNATURES)
         .map(|_| Address::new_unique().to_string())
         .collect();
     fs::remove_file(env.directory.path().join("authority.json")).unwrap();
@@ -483,7 +515,7 @@ fn multiple_signers_share_one_confirmation(answer: &str, approved: bool) {
 
 #[test_case(false; "one signer")]
 #[test_case(true; "multiple signers")]
-fn default_display_shows_pairs_and_one_execute_message(multiple: bool) {
+fn default_display_shows_pairs_and_one_authorization_message(multiple: bool) {
     let mut env = SignTestEnv::new();
     let second = Keypair::new_from_array([4; 32]);
     let second_file = env.directory.path().join("second.json");
@@ -513,7 +545,7 @@ fn default_display_shows_pairs_and_one_execute_message(multiple: bool) {
     let output = run_psigner(&env.args(&extra));
     assert_eq!(
         String::from_utf8(output.stdout.clone()).unwrap(),
-        format!("{expected_pairs}Execute message (base64):\n{encoded}\n")
+        format!("{expected_pairs}Authorization message (base64):\n{encoded}\n")
     );
     extra.extend(["--quiet", "--output", "display"]);
     let quiet = run_psigner(&env.args(&extra));
@@ -522,25 +554,30 @@ fn default_display_shows_pairs_and_one_execute_message(multiple: bool) {
 }
 
 #[test]
-fn nonce_only_approval_includes_ordinary_inner_signers() {
+fn nonce_only_approval_includes_ordinary_execution_signers() {
     let mut env = SignTestEnv::new();
-    let inner_signer = Keypair::new_from_array([7; 32]).pubkey();
-    env.inner = Message::new(&[transfer(&inner_signer, &Address::new_unique(), 1)], None);
-    env.encoded = BASE64_STANDARD.encode(env.inner.serialize());
+    let execution_signer = Keypair::new_from_array([7; 32]).pubkey();
+    env.execution_message = v1::Message::try_compile(
+        &execution_signer,
+        &[transfer(&execution_signer, &Address::new_unique(), 1)],
+        Hash::default(),
+    )
+    .unwrap();
+    env.encoded = BASE64_STANDARD.encode(env.execution_message.serialize());
     let output = run_psigner(&env.args(&["--yes", "--output", "json"]));
     let values: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(values.len(), 1);
     let summary = String::from_utf8(output.stderr).unwrap();
     assert!(summary.contains(&format!(
-        "Forwarded signers (sign at submission):\n  {inner_signer}"
+        "Forwarded signers (sign at submission):\n  {execution_signer}"
     )));
-    let expected = env.expected(&[env.authority.pubkey(), inner_signer]);
+    let expected = env.expected(&[env.authority.pubkey(), execution_signer]);
     assert_eq!(
         values[0]["forwarded_signers"],
-        serde_json::json!([inner_signer.to_string()])
+        serde_json::json!([execution_signer.to_string()])
     );
     assert_eq!(
-        values[0]["execute_message"],
+        values[0]["authorization_message"],
         BASE64_STANDARD.encode(expected.serialize())
     );
 
@@ -549,7 +586,7 @@ fn nonce_only_approval_includes_ordinary_inner_signers() {
         String::from_utf8(display.stdout).unwrap(),
         format!(
             "Address: {}\nSignature: {}\n\nForwarded signers (sign at submission):\n  \
-             {inner_signer}\n\nExecute message (base64):\n{}\n",
+             {execution_signer}\n\nAuthorization message (base64):\n{}\n",
             env.authority.pubkey(),
             env.authority.sign_message(&expected.serialize()),
             BASE64_STANDARD.encode(expected.serialize())
@@ -568,11 +605,16 @@ fn rejects_authority_without_signer_role(pda_is_account: bool) {
     } else {
         Address::new_unique()
     };
-    // The raw authority being an inner signer does not qualify its derived PDA.
-    env.inner = Message::new(&[transfer(&env.authority.pubkey(), &recipient, 1)], None);
-    env.encoded = BASE64_STANDARD.encode(env.inner.serialize());
+    // The raw authority being an execution message signer does not qualify its derived PDA.
+    env.execution_message = v1::Message::try_compile(
+        &env.authority.pubkey(),
+        &[transfer(&env.authority.pubkey(), &recipient, 1)],
+        Hash::default(),
+    )
+    .unwrap();
+    env.encoded = BASE64_STANDARD.encode(env.execution_message.serialize());
     fs::remove_file(env.directory.path().join("authority.json")).unwrap();
-    env.reject("is neither the nonce authority nor a signer on the inner message");
+    env.reject("is neither the nonce authority nor a signer on the execution message");
 }
 
 #[test]
@@ -580,25 +622,27 @@ fn rejects_unused_authority_even_when_only_valid_authority_signs_locally() {
     let mut env = SignTestEnv::new();
     env.authorities
         .push(Keypair::new_from_array([4; 32]).pubkey().to_string());
-    env.reject("is neither the nonce authority nor a signer on the inner message");
+    env.reject("is neither the nonce authority nor a signer on the execution message");
 }
 
-#[test_case(false; "nonce authority outside inner message")]
-#[test_case(true; "nonce authority also an inner signer")]
-fn includes_ordinary_nonce_authority_once(also_inner_signer: bool) {
+#[test_case(false; "nonce authority outside execution message")]
+#[test_case(true; "nonce authority also an execution message signer")]
+fn includes_ordinary_nonce_authority_once(also_execution_signer: bool) {
     let mut env = SignTestEnv::new();
     let nonce_authority = Keypair::new_from_array([7; 32]).pubkey();
     env.nonce_authority = nonce_authority.to_string();
-    if also_inner_signer {
-        let pda = env.inner.account_keys[0];
-        env.inner = Message::new(
+    if also_execution_signer {
+        let pda = env.execution_message.account_keys[0];
+        env.execution_message = v1::Message::try_compile(
+            &pda,
             &[
                 transfer(&pda, &Address::new_unique(), 1),
                 transfer(&nonce_authority, &Address::new_unique(), 1),
             ],
-            None,
-        );
-        env.encoded = BASE64_STANDARD.encode(env.inner.serialize());
+            Hash::default(),
+        )
+        .unwrap();
+        env.encoded = BASE64_STANDARD.encode(env.execution_message.serialize());
     }
     let output = run_psigner(&env.args(&["--yes", "--output", "json"]));
     let values: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout).unwrap();
@@ -610,30 +654,32 @@ fn includes_ordinary_nonce_authority_once(also_inner_signer: bool) {
         serde_json::json!([nonce_authority.to_string()])
     );
     assert_eq!(
-        values[0]["execute_message"],
+        values[0]["authorization_message"],
         BASE64_STANDARD.encode(expected.serialize())
     );
     let signature = Signature::from_str(values[0]["signature"].as_str().unwrap()).unwrap();
     assert!(signature.verify(env.authority.pubkey().as_ref(), &expected.serialize()));
 }
 
-#[test_case(false; "authority is an inner signer")]
+#[test_case(false; "authority is an execution message signer")]
 #[test_case(true; "authority is the nonce authority")]
 fn authority_used_directly_is_also_forwarded(is_nonce_authority: bool) {
     let mut env = SignTestEnv::new();
     let authority = env.authority.pubkey();
-    let pda = env.inner.account_keys[0];
+    let pda = env.execution_message.account_keys[0];
     if is_nonce_authority {
         env.nonce_authority = authority.to_string();
     } else {
-        env.inner = Message::new(
+        env.execution_message = v1::Message::try_compile(
+            &pda,
             &[
                 transfer(&pda, &Address::new_unique(), 1),
                 transfer(&authority, &Address::new_unique(), 1),
             ],
-            None,
-        );
-        env.encoded = BASE64_STANDARD.encode(env.inner.serialize());
+            Hash::default(),
+        )
+        .unwrap();
+        env.encoded = BASE64_STANDARD.encode(env.execution_message.serialize());
     }
     let output = run_psigner(&env.args(&["--yes", "--output", "json"]));
     let values: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout).unwrap();
@@ -651,7 +697,7 @@ fn authority_used_directly_is_also_forwarded(is_nonce_authority: bool) {
         serde_json::json!([authority.to_string()])
     );
     assert_eq!(
-        values[0]["execute_message"],
+        values[0]["authorization_message"],
         BASE64_STANDARD.encode(expected.serialize())
     );
 }
@@ -659,16 +705,12 @@ fn authority_used_directly_is_also_forwarded(is_nonce_authority: bool) {
 #[test]
 fn rejects_too_many_combined_signers_before_loading_wallet() {
     let mut env = SignTestEnv::new();
-    // The PDA authority contributes one more signer than the inner message contains.
-    env.inner.account_keys = (0..127).map(|_| Address::new_unique()).collect();
-    env.inner
-        .account_keys
-        .push(solana_system_interface::program::id());
-    env.inner.header.num_required_signatures = 127;
-    env.inner.header.num_readonly_signed_accounts = 0;
-    env.inner.header.num_readonly_unsigned_accounts = 1;
-    env.inner.instructions.clear();
-    env.encoded = BASE64_STANDARD.encode(env.inner.serialize());
+    // The authorities alone reach the v1 signer limit, and the forwarded nonce authority pushes
+    // the authorization message over it.
+    while env.authorities.len() < usize::from(v1::MAX_SIGNATURES) {
+        env.authorities.push(Address::new_unique().to_string());
+    }
+    env.nonce_authority = Address::new_unique().to_string();
     fs::remove_file(env.directory.path().join("authority.json")).unwrap();
     env.reject("too many required signers");
 }

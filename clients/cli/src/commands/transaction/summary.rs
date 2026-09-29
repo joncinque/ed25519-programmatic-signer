@@ -2,35 +2,29 @@ use {
     anyhow::{Context, Result, ensure},
     indoc::formatdoc,
     solana_address::Address,
-    solana_message::{VersionedMessage, legacy::Message},
+    solana_message::{VersionedMessage, v1},
     solana_signature::Signature,
     solana_signer::Signer,
-    solana_transaction_status::{Encodable, EncodableWithMeta, UiTransactionEncoding},
+    solana_transaction_status::{Encodable, UiTransactionEncoding},
     spl_ed25519_signer_client::ProgrammaticSigner,
     std::io,
 };
 
-/// Describe what signing the execute message authorizes. `closing` says what happens after
+/// Describe what signing the authorization message authorizes. `closing` says what happens after
 /// signing.
 pub(super) fn render_signing_summary(
-    inner: &Message,
-    outer: &VersionedMessage,
+    execution_message: &v1::Message,
+    authorization_message: &v1::Message,
     nonce_account: &Address,
     nonce_authority: &Address,
     authorities: &[Address],
     forwarded_signers: &[Address],
     closing: &str,
 ) -> Result<String> {
-    let inner_json =
-        serde_json::to_string_pretty(&inner.encode(UiTransactionEncoding::JsonParsed))?;
-    let (outer_version, outer_ui_message) = match outer {
-        VersionedMessage::Legacy(message) => {
-            ("Legacy", message.encode(UiTransactionEncoding::Json))
-        }
-        VersionedMessage::V0(message) => ("v0", message.json_encode()),
-        VersionedMessage::V1(message) => ("v1", message.encode(UiTransactionEncoding::Json)),
-    };
-    let outer_json = serde_json::to_string_pretty(&outer_ui_message)?;
+    let execution_json =
+        serde_json::to_string_pretty(&execution_message.encode(UiTransactionEncoding::JsonParsed))?;
+    let authorization_json =
+        serde_json::to_string_pretty(&authorization_message.encode(UiTransactionEncoding::Json))?;
     let signing_keys = authorities
         .iter()
         .map(|authority| {
@@ -52,10 +46,10 @@ pub(super) fn render_signing_summary(
             forwarded_signers.join("\n")
         )
     };
-    let message_hash = outer.hash();
-    let expected_nonce = inner.recent_blockhash;
+    let message_hash = VersionedMessage::hash_raw_message(&authorization_message.serialize());
+    let expected_nonce = execution_message.lifetime_specifier;
     Ok(formatdoc! {"
-        === Authorization ===
+        === Signing ===
         Message hash: {message_hash}
         PDA promotion authorities:
         {signing_keys}
@@ -63,18 +57,18 @@ pub(super) fn render_signing_summary(
         === Replay protection ===
         SPL nonce account address: {nonce_account}
         Nonce authority: {nonce_authority}
-        Expected nonce value (inner message's recent blockhash): {expected_nonce}
+        Expected nonce value (execution message's recent blockhash): {expected_nonce}
 
-        === Outer message ===
+        === Authorization message ===
         Your signatures authorize this Execute call, including its accounts, permissions,
-        and the inner message.
+        and the execution message.
 
-        {outer_version} message:
-        {outer_json}
+        v1 message:
+        {authorization_json}
 
-        === Inner message (what the executor program invokes via CPI) ===
-        Legacy message:
-        {inner_json}
+        === Execution message (what the executor program invokes via CPI) ===
+        v1 message:
+        {execution_json}
 
         {closing}"
     })
@@ -106,18 +100,18 @@ pub(super) fn confirm_signing(
     Ok(())
 }
 
-/// Sign the execute message with each signer.
-pub(super) fn sign_outer_message(
-    outer_message: &VersionedMessage,
+/// Sign the authorization message with each signer.
+pub(super) fn sign_authorization_message(
+    authorization_message: &v1::Message,
     signers: &[(Address, Box<dyn Signer>)],
 ) -> Result<Vec<(Address, Signature)>> {
-    let message_bytes = outer_message.serialize();
+    let message_bytes = authorization_message.serialize();
     signers
         .iter()
         .map(|(authority, signer)| {
-            let signature = signer
-                .try_sign_message(&message_bytes)
-                .with_context(|| format!("failed to sign outer message with {authority}"))?;
+            let signature = signer.try_sign_message(&message_bytes).with_context(|| {
+                format!("failed to sign authorization message with {authority}")
+            })?;
             Ok((*authority, signature))
         })
         .collect()

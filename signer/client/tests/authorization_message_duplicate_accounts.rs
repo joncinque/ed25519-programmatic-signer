@@ -1,7 +1,7 @@
 use {
     solana_address::Address,
     solana_instruction::{AccountMeta, Instruction},
-    spl_ed25519_signer_client::message::wrapped_message,
+    spl_ed25519_signer_client::message::authorization_message,
     std::collections::BTreeSet,
     test_case::test_case,
 };
@@ -20,7 +20,7 @@ fn repeated_account_preserves_writable_privilege_and_instruction_positions() {
         data: vec![],
     };
 
-    let message = wrapped_message(&instruction, &[authority]);
+    let message = authorization_message(&instruction, &[authority]);
     message.sanitize().unwrap();
     let compiled = &message.instructions()[0];
 
@@ -71,7 +71,7 @@ fn duplicate_privileges_are_merged_in_either_order(privileges: [bool; 2]) {
         ],
         data: vec![7, 8],
     };
-    let message = wrapped_message(&instruction, &[authority]);
+    let message = authorization_message(&instruction, &[authority]);
     message.sanitize().unwrap();
     let compiled = &message.instructions()[0];
     assert_eq!(compiled.accounts.len(), 3);
@@ -86,7 +86,7 @@ fn duplicate_privileges_are_merged_in_either_order(privileges: [bool; 2]) {
     assert_eq!(message.static_account_keys()[index], shared);
     assert!(
         !message.is_signer(index),
-        "input signer flags must not grant outer signer privilege"
+        "input signer flags must not grant authorization message signer privilege"
     );
     let should_be_writable = privileges.into_iter().any(|writable| writable);
     assert_eq!(
@@ -111,7 +111,7 @@ fn authority_and_program_references_reuse_existing_account_keys() {
         ],
         data: vec![],
     };
-    let message = wrapped_message(&instruction, &[readonly_authority, writable_authority]);
+    let message = authorization_message(&instruction, &[readonly_authority, writable_authority]);
     message.sanitize().unwrap();
     assert_eq!(
         message.static_account_keys(),
@@ -132,7 +132,7 @@ fn unaffected_message_without_authority_writes_preserves_serialized_bytes() {
     use {
         solana_hash::Hash,
         solana_message::{
-            VersionedMessage, compiled_instruction::CompiledInstruction, legacy::Message,
+            MessageHeader, VersionedMessage, compiled_instruction::CompiledInstruction, v1,
         },
     };
 
@@ -157,10 +157,14 @@ fn unaffected_message_without_authority_writes_preserves_serialized_bytes() {
         data: vec![11, 12],
     };
     // With no authority writes, the first authority is the writable fee-payer placeholder.
-    let expected = VersionedMessage::Legacy(Message::new_with_compiled_instructions(
-        2,
-        1,
-        3,
+    let expected = VersionedMessage::V1(v1::Message::new(
+        MessageHeader {
+            num_required_signatures: 2,
+            num_readonly_signed_accounts: 1,
+            num_readonly_unsigned_accounts: 3,
+        },
+        v1::TransactionConfig::default(),
+        Hash::default(),
         vec![
             first_authority,
             second_authority,
@@ -170,14 +174,13 @@ fn unaffected_message_without_authority_writes_preserves_serialized_bytes() {
             readonly1,
             readonly2,
         ],
-        Hash::default(),
         vec![CompiledInstruction {
             program_id_index: 4,
             accounts: vec![5, 2, 6, 3],
             data: vec![11, 12],
         }],
     ));
-    let actual = wrapped_message(&instruction, &[first_authority, second_authority]);
+    let actual = authorization_message(&instruction, &[first_authority, second_authority]);
     actual.sanitize().unwrap();
     assert_eq!(actual.serialize(), expected.serialize());
 }
@@ -187,7 +190,7 @@ fn unaffected_message_with_authority_writes_preserves_serialized_bytes() {
     use {
         solana_hash::Hash,
         solana_message::{
-            VersionedMessage, compiled_instruction::CompiledInstruction, legacy::Message,
+            MessageHeader, VersionedMessage, compiled_instruction::CompiledInstruction, v1,
         },
     };
 
@@ -213,10 +216,14 @@ fn unaffected_message_with_authority_writes_preserves_serialized_bytes() {
         data: vec![11, 12],
     };
     // The written authority moves ahead of the readonly authority.
-    let expected = VersionedMessage::Legacy(Message::new_with_compiled_instructions(
-        2,
-        1,
-        3,
+    let expected = VersionedMessage::V1(v1::Message::new(
+        MessageHeader {
+            num_required_signatures: 2,
+            num_readonly_signed_accounts: 1,
+            num_readonly_unsigned_accounts: 3,
+        },
+        v1::TransactionConfig::default(),
+        Hash::default(),
         vec![
             second_authority,
             first_authority,
@@ -226,14 +233,13 @@ fn unaffected_message_with_authority_writes_preserves_serialized_bytes() {
             readonly1,
             readonly2,
         ],
-        Hash::default(),
         vec![CompiledInstruction {
             program_id_index: 4,
             accounts: vec![5, 2, 6, 3, 0],
             data: vec![11, 12],
         }],
     ));
-    let actual = wrapped_message(&instruction, &[first_authority, second_authority]);
+    let actual = authorization_message(&instruction, &[first_authority, second_authority]);
     actual.sanitize().unwrap();
     assert_eq!(actual.serialize(), expected.serialize());
 }
@@ -268,7 +274,7 @@ fn interleaved_duplicates_recompile_all_indices_and_preserve_privilege_order() {
         ],
         data: vec![42],
     };
-    let message = wrapped_message(&instruction, &[authority]);
+    let message = authorization_message(&instruction, &[authority]);
     message.sanitize().unwrap();
 
     // Writable keys retain first-writable-occurrence order, including a key first seen readonly.

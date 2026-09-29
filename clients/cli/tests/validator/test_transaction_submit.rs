@@ -1,12 +1,12 @@
 use {
     crate::common::{
-        execute::{encode, execute_message, programmatic_signer, signature_entry},
+        execute::{build_authorization_message, encode, programmatic_signer, signature_entry},
         helpers::{TestEnv, run_psigner, run_psigner_with_input},
     },
     solana_address::Address,
     solana_hash::Hash,
     solana_keypair::{Keypair, write_keypair_file},
-    solana_message::{VersionedMessage, legacy::Message},
+    solana_message::{VersionedMessage, v1},
     solana_signer::Signer,
     solana_system_interface::instruction::transfer,
     solana_transaction::Transaction,
@@ -16,17 +16,17 @@ use {
 };
 
 const INITIAL_BALANCE: u64 = 10_000_000;
-const TRANSFER_AMOUNT: u64 = 1_000_000;
+pub(crate) const TRANSFER_AMOUNT: u64 = 1_000_000;
 
-/// A funded recipient and a nonce account whose value the inner message uses as its blockhash.
-struct SubmitTest {
-    recipient: Address,
-    nonce_account: Address,
-    nonce: Hash,
+/// A funded recipient and a nonce account whose value the execution message uses as its blockhash.
+pub(crate) struct SubmitTest {
+    pub(crate) recipient: Address,
+    pub(crate) nonce_account: Address,
+    pub(crate) nonce: Hash,
 }
 
 impl SubmitTest {
-    async fn new(env: &TestEnv, nonce_authority: &Address) -> Self {
+    pub(crate) async fn new(env: &TestEnv, nonce_authority: &Address) -> Self {
         let recipient = Keypair::new().pubkey();
         fund(env, &[recipient]).await;
         let create = run_psigner(&[
@@ -47,16 +47,16 @@ impl SubmitTest {
         }
     }
 
-    /// An inner message transferring from each sender to the recipient.
-    fn inner(&self, senders: &[Address]) -> Message {
+    /// An execution message transferring from each sender to the recipient.
+    pub(crate) fn execution_message(&self, senders: &[Address]) -> v1::Message {
         let transfers = senders
             .iter()
             .map(|sender| transfer(sender, &self.recipient, TRANSFER_AMOUNT))
             .collect::<Vec<_>>();
-        Message::new_with_blockhash(&transfers, Some(&senders[0]), &self.nonce)
+        v1::Message::try_compile(&senders[0], &transfers, self.nonce).unwrap()
     }
 
-    async fn assert_received(&self, env: &TestEnv, transfers: u64) {
+    pub(crate) async fn assert_received(&self, env: &TestEnv, transfers: u64) {
         assert_eq!(
             env.rpc.get_balance(&self.recipient).await.unwrap(),
             INITIAL_BALANCE
@@ -66,7 +66,7 @@ impl SubmitTest {
     }
 }
 
-async fn fund(env: &TestEnv, addresses: &[Address]) {
+pub(crate) async fn fund(env: &TestEnv, addresses: &[Address]) {
     let instructions = addresses
         .iter()
         .map(|address| transfer(&env.payer.pubkey(), address, INITIAL_BALANCE))
@@ -96,21 +96,21 @@ fn submit(env: &TestEnv, message: &VersionedMessage, extra: &[&str], input: &str
         &env.config_file_path,
         "transaction",
         "submit",
-        "--execute-message",
+        "--authorization-message",
         &encoded,
     ];
     args.extend_from_slice(extra);
     run_psigner_with_input(&args, input)
 }
 
-/// The signing summary shown to local signers on the execute message.
+/// The signing summary shown to local signers on the authorization message.
 struct Summary<'a> {
     authorities: &'a [Address],
     forwarded_signers: &'a [Address],
     confirmed_by: &'a [Address],
 }
 
-/// Local signers on the execute message see the signing summary and confirm; a fee payer that
+/// Local signers on the authorization message see the signing summary and confirm; a fee payer that
 /// only signs the relay transaction does not.
 fn assert_submitted(output: &Output, summary: Option<Summary>) {
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -127,7 +127,7 @@ fn assert_submitted(output: &Output, summary: Option<Summary>) {
 }
 
 fn assert_summary(stderr: &str, summary: &Summary) {
-    assert!(stderr.starts_with("=== Authorization ==="), "{stderr}");
+    assert!(stderr.starts_with("=== Signing ==="), "{stderr}");
     let authorities = summary
         .authorities
         .iter()
@@ -185,8 +185,8 @@ pub async fn submits_authority_signed_transfer_and_rejects_replay(env: &TestEnv)
     let signer = programmatic_signer(&authority.pubkey());
     fund(env, &[signer]).await;
     let test = SubmitTest::new(env, &signer).await;
-    let message = execute_message(
-        &test.inner(&[signer]),
+    let message = build_authorization_message(
+        &test.execution_message(&[signer]),
         &test.nonce_account,
         &signer,
         &[authority.pubkey()],
@@ -194,17 +194,17 @@ pub async fn submits_authority_signed_transfer_and_rejects_replay(env: &TestEnv)
     let authority_entry = signature_entry(&authority, &message);
 
     assert_submitted(
-        &submit(env, &message, &["--authority", &authority_entry], ""),
+        &submit(env, &message, &["--signer", &authority_entry], ""),
         None,
     );
     test.assert_received(env, 1).await;
 
     // The nonce has advanced, so the same signatures cannot be submitted again.
-    let replay = submit(env, &message, &["--authority", &authority_entry], "");
+    let replay = submit(env, &message, &["--signer", &authority_entry], "");
     assert_failure(
         &replay,
         &format!(
-            "execute message uses nonce value {}, but nonce account {} currently has",
+            "authorization message uses nonce value {}, but nonce account {} currently has",
             test.nonce, test.nonce_account
         ),
     );
@@ -217,8 +217,8 @@ pub async fn submits_with_forwarded_ordinary_signer(env: &TestEnv) {
     let ordinary = Keypair::new();
     fund(env, &[signer, ordinary.pubkey()]).await;
     let test = SubmitTest::new(env, &signer).await;
-    let message = execute_message(
-        &test.inner(&[signer, ordinary.pubkey()]),
+    let message = build_authorization_message(
+        &test.execution_message(&[signer, ordinary.pubkey()]),
         &test.nonce_account,
         &signer,
         &[authority.pubkey()],
@@ -230,9 +230,9 @@ pub async fn submits_with_forwarded_ordinary_signer(env: &TestEnv) {
             env,
             &message,
             &[
-                "--authority",
-                &signature_entry(&authority, &message),
                 "--signer",
+                &signature_entry(&authority, &message),
+                "--relay-signer",
                 ordinary_file.path().to_str().unwrap(),
             ],
             "y",
@@ -252,8 +252,8 @@ pub async fn submits_with_plain_key_nonce_authority(env: &TestEnv) {
     let nonce_authority = Keypair::new();
     fund(env, &[signer]).await;
     let test = SubmitTest::new(env, &nonce_authority.pubkey()).await;
-    let message = execute_message(
-        &test.inner(&[signer]),
+    let message = build_authorization_message(
+        &test.execution_message(&[signer]),
         &test.nonce_account,
         &nonce_authority.pubkey(),
         &[authority.pubkey()],
@@ -265,9 +265,9 @@ pub async fn submits_with_plain_key_nonce_authority(env: &TestEnv) {
             env,
             &message,
             &[
-                "--authority",
-                &signature_entry(&authority, &message),
                 "--signer",
+                &signature_entry(&authority, &message),
+                "--relay-signer",
                 nonce_authority_file.path().to_str().unwrap(),
             ],
             "y",
@@ -286,9 +286,10 @@ pub async fn submits_with_fee_payer_as_forwarded_signer(env: &TestEnv) {
     let signer = programmatic_signer(&authority.pubkey());
     fund(env, &[signer]).await;
     let test = SubmitTest::new(env, &signer).await;
-    // The configured keypair pays the relay fee and also sends one of the inner transfers.
-    let message = execute_message(
-        &test.inner(&[signer, env.payer.pubkey()]),
+    // The configured keypair pays the relay fee and also sends one of the execution message
+    // transfers.
+    let message = build_authorization_message(
+        &test.execution_message(&[signer, env.payer.pubkey()]),
         &test.nonce_account,
         &signer,
         &[authority.pubkey()],
@@ -298,7 +299,7 @@ pub async fn submits_with_fee_payer_as_forwarded_signer(env: &TestEnv) {
         &submit(
             env,
             &message,
-            &["--authority", &signature_entry(&authority, &message)],
+            &["--signer", &signature_entry(&authority, &message)],
             "y",
         ),
         Some(Summary {
@@ -319,8 +320,8 @@ pub async fn submits_authority_signatures_in_any_order(env: &TestEnv) {
         .map(|authority| programmatic_signer(&authority.pubkey()));
     fund(env, &signers).await;
     let test = SubmitTest::new(env, &signers[0]).await;
-    let message = execute_message(
-        &test.inner(&signers),
+    let message = build_authorization_message(
+        &test.execution_message(&signers),
         &test.nonce_account,
         &signers[0],
         &authorities.each_ref().map(Signer::pubkey),
@@ -331,9 +332,9 @@ pub async fn submits_authority_signatures_in_any_order(env: &TestEnv) {
             env,
             &message,
             &[
-                "--authority",
+                "--signer",
                 &signature_entry(&authorities[0], &message),
-                "--authority",
+                "--signer",
                 &signature_entry(&authorities[1], &message),
             ],
             "",
@@ -348,9 +349,10 @@ pub async fn submits_with_forwarded_authority(env: &TestEnv) {
     let signer = programmatic_signer(&authority.pubkey());
     fund(env, &[signer, authority.pubkey()]).await;
     let test = SubmitTest::new(env, &signer).await;
-    // The authority promotes its PDA and also sends one of the inner transfers directly.
-    let message = execute_message(
-        &test.inner(&[signer, authority.pubkey()]),
+    // The authority promotes its PDA and also sends one of the execution message transfers
+    // directly.
+    let message = build_authorization_message(
+        &test.execution_message(&[signer, authority.pubkey()]),
         &test.nonce_account,
         &signer,
         &[authority.pubkey()],
@@ -362,9 +364,9 @@ pub async fn submits_with_forwarded_authority(env: &TestEnv) {
             env,
             &message,
             &[
-                "--authority",
-                &signature_entry(&authority, &message),
                 "--signer",
+                &signature_entry(&authority, &message),
+                "--relay-signer",
                 authority_file.path().to_str().unwrap(),
             ],
             "y",
@@ -378,27 +380,33 @@ pub async fn submits_with_forwarded_authority(env: &TestEnv) {
     test.assert_received(env, 2).await;
 }
 
-pub async fn submits_with_authority_as_inner_non_signer(env: &TestEnv) {
+pub async fn submits_with_authority_as_execution_message_non_signer(env: &TestEnv) {
     let authority = Keypair::new();
     let signer = programmatic_signer(&authority.pubkey());
     fund(env, &[signer]).await;
     let test = SubmitTest::new(env, &signer).await;
     // The authority's own address only receives a transfer, so it is not forwarded.
-    let inner = Message::new_with_blockhash(
+    let execution_message = v1::Message::try_compile(
+        &signer,
         &[
             transfer(&signer, &test.recipient, TRANSFER_AMOUNT),
             transfer(&signer, &authority.pubkey(), TRANSFER_AMOUNT),
         ],
-        Some(&signer),
-        &test.nonce,
+        test.nonce,
+    )
+    .unwrap();
+    let message = build_authorization_message(
+        &execution_message,
+        &test.nonce_account,
+        &signer,
+        &[authority.pubkey()],
     );
-    let message = execute_message(&inner, &test.nonce_account, &signer, &[authority.pubkey()]);
 
     assert_submitted(
         &submit(
             env,
             &message,
-            &["--authority", &signature_entry(&authority, &message)],
+            &["--signer", &signature_entry(&authority, &message)],
             "",
         ),
         None,
@@ -417,8 +425,8 @@ pub async fn rejects_nonce_authority_mismatch(env: &TestEnv) {
     fund(env, &[signer]).await;
     let test = SubmitTest::new(env, &signer).await;
     // The message names a different nonce authority than the live nonce account.
-    let message = execute_message(
-        &test.inner(&[signer]),
+    let message = build_authorization_message(
+        &test.execution_message(&[signer]),
         &test.nonce_account,
         &other_authority.pubkey(),
         &[authority.pubkey()],
@@ -430,15 +438,16 @@ pub async fn rejects_nonce_authority_mismatch(env: &TestEnv) {
             env,
             &message,
             &[
-                "--authority",
-                &signature_entry(&authority, &message),
                 "--signer",
+                &signature_entry(&authority, &message),
+                "--relay-signer",
                 other_authority_file.path().to_str().unwrap(),
             ],
             "",
         ),
         &format!(
-            "execute message uses nonce authority {}, but nonce account {} has authority {signer}",
+            "authorization message uses nonce authority {}, but nonce account {} has authority \
+             {signer}",
             other_authority.pubkey(),
             test.nonce_account
         ),
@@ -452,8 +461,8 @@ pub async fn cancels_when_forwarded_signer_declines(env: &TestEnv) {
     let ordinary = Keypair::new();
     fund(env, &[signer, ordinary.pubkey()]).await;
     let test = SubmitTest::new(env, &signer).await;
-    let message = execute_message(
-        &test.inner(&[signer, ordinary.pubkey()]),
+    let message = build_authorization_message(
+        &test.execution_message(&[signer, ordinary.pubkey()]),
         &test.nonce_account,
         &signer,
         &[authority.pubkey()],
@@ -464,9 +473,9 @@ pub async fn cancels_when_forwarded_signer_declines(env: &TestEnv) {
         env,
         &message,
         &[
-            "--authority",
-            &signature_entry(&authority, &message),
             "--signer",
+            &signature_entry(&authority, &message),
+            "--relay-signer",
             ordinary_file.path().to_str().unwrap(),
         ],
         "n\n",
@@ -489,8 +498,8 @@ pub async fn submits_quietly_without_confirmation(env: &TestEnv) {
     let ordinary = Keypair::new();
     fund(env, &[signer, ordinary.pubkey()]).await;
     let test = SubmitTest::new(env, &signer).await;
-    let message = execute_message(
-        &test.inner(&[signer, ordinary.pubkey()]),
+    let message = build_authorization_message(
+        &test.execution_message(&[signer, ordinary.pubkey()]),
         &test.nonce_account,
         &signer,
         &[authority.pubkey()],
@@ -501,9 +510,9 @@ pub async fn submits_quietly_without_confirmation(env: &TestEnv) {
         env,
         &message,
         &[
-            "--authority",
-            &signature_entry(&authority, &message),
             "--signer",
+            &signature_entry(&authority, &message),
+            "--relay-signer",
             ordinary_file.path().to_str().unwrap(),
             "--quiet",
             "--yes",

@@ -10196,7 +10196,7 @@ dependencies = [
  "solana-transaction",
  "spl-ed25519-signer-client",
  "spl-ed25519-signer-interface",
- "spl-legacy-message-executor-interface",
+ "spl-message-executor-interface",
  "test-case",
  "wincode",
 ]
@@ -10212,18 +10212,28 @@ dependencies = [
 ]
 
 [[package]]
-name = "spl-legacy-message-executor-client"
+name = "spl-memo-interface"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3745d384b0afee980d43d62b66c27bdcbbd03507732b8d3626d3413cb72084f2"
+dependencies = [
+ "solana-instruction",
+ "solana-pubkey 4.2.0",
+]
+
+[[package]]
+name = "spl-message-executor-client"
 version = "0.1.0"
 dependencies = [
  "solana-address 2.6.1",
  "solana-instruction",
  "solana-message",
- "spl-legacy-message-executor-interface",
+ "spl-message-executor-interface",
  "spl-nonce-interface",
 ]
 
 [[package]]
-name = "spl-legacy-message-executor-interface"
+name = "spl-message-executor-interface"
 version = "0.1.0"
 dependencies = [
  "codama-macros",
@@ -10236,7 +10246,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "spl-legacy-message-executor-program"
+name = "spl-message-executor-program"
 version = "0.1.0"
 dependencies = [
  "mollusk-svm",
@@ -10250,21 +10260,12 @@ dependencies = [
  "solana-rent",
  "solana-sanitize",
  "solana-system-interface 3.2.0",
- "spl-legacy-message-executor-client",
- "spl-legacy-message-executor-interface",
+ "spl-message-executor-client",
+ "spl-message-executor-interface",
  "spl-nonce-client",
  "spl-nonce-interface",
+ "test-case",
  "wincode",
-]
-
-[[package]]
-name = "spl-memo-interface"
-version = "2.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3745d384b0afee980d43d62b66c27bdcbbd03507732b8d3626d3413cb72084f2"
-dependencies = [
- "solana-instruction",
- "solana-pubkey 4.2.0",
 ]
 
 [[package]]
@@ -10326,6 +10327,7 @@ dependencies = [
  "serde",
  "serde_json",
  "solana-account 4.3.2",
+ "solana-account-decoder-client-types",
  "solana-address 2.6.1",
  "solana-clap-v3-utils",
  "solana-cli-config",
@@ -10336,6 +10338,7 @@ dependencies = [
  "solana-keypair",
  "solana-message",
  "solana-native-token",
+ "solana-program-pack",
  "solana-remote-wallet",
  "solana-rpc-client",
  "solana-rpc-client-types",
@@ -10346,10 +10349,11 @@ dependencies = [
  "solana-transaction",
  "solana-transaction-status",
  "spl-ed25519-signer-client",
- "spl-legacy-message-executor-client",
- "spl-legacy-message-executor-interface",
+ "spl-message-executor-client",
+ "spl-message-executor-interface",
  "spl-nonce-client",
  "spl-nonce-interface",
+ "spl-token-interface",
  "tempfile",
  "test-case",
  "tokio",

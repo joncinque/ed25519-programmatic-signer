@@ -7,28 +7,28 @@ import {
 } from 'codama';
 
 const executeRemainingAccounts = instructionRemainingAccountsNode(
-    resolverValueNode('resolveMessageAccounts', {
+    resolverValueNode('resolveExecutionMessageAccounts', {
         dependsOn: [argumentValueNode('message')],
-        docs: "Preserves each wrapped message account's signer and writable role.",
+        docs: "Preserves each execution message account's signer and writable role.",
     }),
     {
-        display: instructionAccountDisplayNode({ label: 'Wrapped message accounts' }),
-        docs: "One account for each key in the wrapped message's static account-key list, in the same order.",
+        display: instructionAccountDisplayNode({ label: 'Execution message accounts' }),
+        docs: "One account for each key in the execution message's static account-key list, in the same order.",
         isOptional: false,
         isSigner: 'either',
     },
 );
 
 const submitRemainingAccounts = instructionRemainingAccountsNode(
-    resolverValueNode('resolveSubmitMessageAccounts', {
+    resolverValueNode('resolveAuthorizationMessageAccounts', {
         dependsOn: [argumentValueNode('message')],
-        docs: "Preserves each wrapped message account's writable role without marking it as an outer Submit signer.",
+        docs: "Preserves each authorization message account's writable role without marking it as a relay transaction signer.",
     }),
     {
         display: instructionAccountDisplayNode({
-            label: 'Wrapped message accounts',
+            label: 'Authorization message accounts',
         }),
-        docs: "One account for each key in the wrapped message's static account-key list, in the same order.",
+        docs: "One account for each key in the authorization message's static account-key list, in the same order.",
         isOptional: false,
         isSigner: false,
     },

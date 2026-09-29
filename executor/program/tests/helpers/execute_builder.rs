@@ -9,13 +9,13 @@ use {
     solana_address::Address,
     solana_hash::Hash,
     solana_instruction::Instruction,
-    solana_message::legacy,
+    solana_message::v1,
     solana_program_error::ProgramError,
-    spl_legacy_message_executor_client::instruction::execute,
+    spl_message_executor_client::instruction::execute,
     spl_nonce_interface::state::Nonce,
 };
 
-type MessageMutation = Box<dyn FnOnce(&mut legacy::Message)>;
+type MessageMutation = Box<dyn FnOnce(&mut v1::Message)>;
 type InstructionMutation = Box<dyn FnOnce(&mut Instruction)>;
 
 pub const DEFAULT_AUTHORITY: Address = Address::new_from_array([3; 32]);
@@ -25,9 +25,9 @@ pub struct ExecuteBuilder<'a> {
     nonce_account: Option<(Address, Account)>,
     authority: Address,
     payer: Option<Address>,
-    inner_instructions: Vec<Instruction>,
+    message_instructions: Vec<Instruction>,
     recent_blockhash: Option<Hash>,
-    message: Option<legacy::Message>,
+    message: Option<v1::Message>,
     message_mutations: Vec<MessageMutation>,
     execute_instruction_mutations: Vec<InstructionMutation>,
     account_overrides: Vec<(Address, Account)>,
@@ -47,7 +47,7 @@ impl<'a> ExecuteBuilder<'a> {
             nonce_account: None,
             authority: DEFAULT_AUTHORITY,
             payer: None,
-            inner_instructions: vec![],
+            message_instructions: vec![],
             recent_blockhash: None,
             message: None,
             message_mutations: vec![],
@@ -72,8 +72,8 @@ impl<'a> ExecuteBuilder<'a> {
         self
     }
 
-    pub fn inner_instruction(mut self, instruction: Instruction) -> Self {
-        self.inner_instructions.push(instruction);
+    pub fn message_instruction(mut self, instruction: Instruction) -> Self {
+        self.message_instructions.push(instruction);
         self
     }
 
@@ -82,12 +82,12 @@ impl<'a> ExecuteBuilder<'a> {
         self
     }
 
-    pub fn message(mut self, message: legacy::Message) -> Self {
+    pub fn message(mut self, message: v1::Message) -> Self {
         self.message = Some(message);
         self
     }
 
-    pub fn mutate_message(mut self, mutation: impl FnOnce(&mut legacy::Message) + 'static) -> Self {
+    pub fn mutate_message(mut self, mutation: impl FnOnce(&mut v1::Message) + 'static) -> Self {
         self.message_mutations.push(Box::new(mutation));
         self
     }
@@ -117,7 +117,7 @@ impl<'a> ExecuteBuilder<'a> {
             nonce_account: nonce_account_override,
             authority,
             payer,
-            inner_instructions,
+            message_instructions,
             recent_blockhash: recent_blockhash_override,
             message: message_override,
             message_mutations,
@@ -136,11 +136,12 @@ impl<'a> ExecuteBuilder<'a> {
         });
 
         let mut message = message_override.unwrap_or_else(|| {
-            legacy::Message::new_with_blockhash(
-                &inner_instructions,
-                Some(payer.as_ref().unwrap_or(&authority)),
-                &recent_blockhash,
+            v1::Message::try_compile(
+                payer.as_ref().unwrap_or(&authority),
+                &message_instructions,
+                recent_blockhash,
             )
+            .unwrap()
         });
 
         for mutation in message_mutations {
@@ -207,7 +208,7 @@ impl<'a> ExecuteBuilder<'a> {
 pub struct ExecuteResult {
     pub nonce_address: Address,
     pub nonce_account: Account,
-    pub message: legacy::Message,
+    pub message: v1::Message,
     raw: InstructionResult,
 }
 

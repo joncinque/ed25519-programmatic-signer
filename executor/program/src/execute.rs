@@ -1,19 +1,17 @@
 use {
     crate::{
         cpi::invoke_instructions,
-        validate::{validate_message_accounts, validate_wrapped_message},
+        validate::{validate_execution_message, validate_message_accounts},
     },
     pinocchio::{AccountView, ProgramResult, error::ProgramError},
-    solana_message::legacy,
-    spl_legacy_message_executor_interface::{
-        error::Error, instruction::derive_transition_commitment,
-    },
+    solana_message::VersionedMessage,
+    spl_message_executor_interface::{error::Error, instruction::derive_transition_commitment},
     spl_nonce_interface::state::Nonce,
 };
 
 pub fn process_execute(
     accounts: &mut [AccountView],
-    wrapped_message: legacy::Message,
+    execution_message: VersionedMessage,
 ) -> ProgramResult {
     let [
         nonce_authority_account,
@@ -34,13 +32,13 @@ pub fn process_execute(
     let nonce_data = nonce_account.try_borrow()?;
     let Nonce { nonce, .. } = Nonce::view(&nonce_data).map_err(|_| Error::InvalidNonceAccount)?;
 
-    validate_wrapped_message(&wrapped_message)?;
+    let message = validate_execution_message(&execution_message)?;
 
-    if &wrapped_message.recent_blockhash != nonce {
+    if &message.lifetime_specifier != nonce {
         return Err(Error::NonceMismatch.into());
     }
 
-    validate_message_accounts(message_accounts, &wrapped_message)?;
+    validate_message_accounts(message_accounts, message)?;
 
     // The advance ix requires an owned nonce
     let current_nonce = *nonce;
@@ -52,8 +50,8 @@ pub fn process_execute(
         nonce_authority_account,
         nonce_account,
         current_nonce,
-        derive_transition_commitment(&wrapped_message),
+        derive_transition_commitment(&execution_message),
     )?;
 
-    invoke_instructions(message_accounts, &wrapped_message)
+    invoke_instructions(message_accounts, message)
 }

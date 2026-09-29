@@ -2,7 +2,7 @@
 use codama_macros::CodamaErrors;
 use solana_program_error::ProgramError;
 
-/// Custom errors returned by the SPL Legacy Message Executor program.
+/// Custom errors returned by the SPL Message Executor program.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]
 #[cfg_attr(feature = "codama", derive(CodamaErrors))]
@@ -13,19 +13,17 @@ pub enum Error {
         codama(error(message = "The nonce account data could not be decoded as nonce state"))
     )]
     InvalidNonceAccount = 0,
-    /// The legacy message fails sanitization or contains duplicate keys.
+    /// The v1 message fails sanitization or contains duplicate keys.
     #[cfg_attr(
         feature = "codama",
-        codama(error(
-            message = "The legacy message fails sanitization or contains duplicate keys"
-        ))
+        codama(error(message = "The v1 message fails sanitization or contains duplicate keys"))
     )]
     InvalidMessage = 1,
-    /// The passed accounts do not match the wrapped message's account keys.
+    /// The passed accounts do not match the execution message's account keys.
     #[cfg_attr(
         feature = "codama",
         codama(error(
-            message = "The passed accounts do not match the wrapped message's account keys"
+            message = "The passed accounts do not match the execution message's account keys"
         ))
     )]
     MessageAccountsMismatch = 2,
@@ -35,6 +33,19 @@ pub enum Error {
         codama(error(message = "The message's recent blockhash does not match the stored nonce"))
     )]
     NonceMismatch = 3,
+    /// The execution message is not a v1 message.
+    #[cfg_attr(
+        feature = "codama",
+        codama(error(message = "The execution message is not a v1 message"))
+    )]
+    UnsupportedMessageVersion = 4,
+    /// The execution message sets transaction config fields, which only apply to top-level
+    /// transactions.
+    #[cfg_attr(
+        feature = "codama",
+        codama(error(message = "The execution message sets transaction config fields"))
+    )]
+    UnsupportedTransactionConfig = 5,
 }
 
 impl From<Error> for ProgramError {

@@ -5,19 +5,19 @@ use {
     solana_address::Address,
     solana_instruction::Instruction as SolanaInstruction,
     solana_keypair::Keypair,
-    solana_message::{VersionedMessage, legacy::Message},
+    solana_message::{VersionedMessage, v1},
     solana_program_error::ProgramError,
     solana_signer::Signer as _,
     solana_system_interface::instruction::transfer,
     solana_transaction::versioned::VersionedTransaction,
-    spl_ed25519_signer_client::{instruction::submit, message::wrapped_message},
+    spl_ed25519_signer_client::{instruction::submit, message::authorization_message},
     spl_ed25519_signer_interface::pda::ProgrammaticSigner,
 };
 
 pub const DEFAULT_TRANSFER_LAMPORTS: u64 = 1_000_000;
 
 type IxMutation = Box<dyn FnOnce(&mut SolanaInstruction)>;
-type MessageMutation = Box<dyn FnOnce(&mut Message)>;
+type MessageMutation = Box<dyn FnOnce(&mut v1::Message)>;
 type TransactionTamper = Box<dyn FnOnce(&mut VersionedTransaction)>;
 
 pub fn funded_account() -> Account {
@@ -33,7 +33,7 @@ struct SubmitContext {
     recipient: Address,
 }
 
-/// Builds, signs, and submits a wrapped transaction through Mollusk.
+/// Builds and signs an authorization message, then submits it through Mollusk.
 ///
 /// A stub at the allowed executor address forwards to the system program.  A transfer from the
 /// promoted `ProgrammaticSigner` consumes the promotion, so success proves the verify, promote, and
@@ -102,14 +102,14 @@ impl<'a> SubmitBuilder<'a> {
         self
     }
 
-    /// Mutates the wrapped message before signing, so the authorities sign the change.
-    pub fn mutate_message(mut self, mutation: impl FnOnce(&mut Message) + 'static) -> Self {
+    /// Mutates the authorization message before signing, so the authorities sign the change.
+    pub fn mutate_message(mut self, mutation: impl FnOnce(&mut v1::Message) + 'static) -> Self {
         self.message_mutations.push(Box::new(mutation));
         self
     }
 
-    /// Tampers with the wrapped message after signing, so signatures no longer cover it.
-    pub fn tamper_message(mut self, tamper: impl FnOnce(&mut Message) + 'static) -> Self {
+    /// Tampers with the authorization message after signing, so signatures no longer cover it.
+    pub fn tamper_message(mut self, tamper: impl FnOnce(&mut v1::Message) + 'static) -> Self {
         self.message_tampers.push(Box::new(tamper));
         self
     }
@@ -123,7 +123,7 @@ impl<'a> SubmitBuilder<'a> {
         self
     }
 
-    /// Mutates the outer `Submit` instruction the relayer sends.
+    /// Mutates the `Submit` instruction in the relay transaction.
     pub fn mutate_submit_ix(
         mut self,
         mutation: impl FnOnce(&mut SolanaInstruction) + 'static,
@@ -152,25 +152,25 @@ impl<'a> SubmitBuilder<'a> {
         let message = match self.message_override.take() {
             Some(message) => message,
             None => {
-                let inner_executor_instruction =
-                    self.executor_instruction.take().unwrap_or_else(|| {
-                        transfer(
-                            &context.programmatic_signer,
-                            &context.recipient,
-                            DEFAULT_TRANSFER_LAMPORTS,
-                        )
-                    });
-                let mut executor_instruction = stub_executor::wrap(inner_executor_instruction);
+                let cpi_instruction = self.executor_instruction.take().unwrap_or_else(|| {
+                    transfer(
+                        &context.programmatic_signer,
+                        &context.recipient,
+                        DEFAULT_TRANSFER_LAMPORTS,
+                    )
+                });
+                let mut executor_instruction = stub_executor::wrap(cpi_instruction);
                 for mutation in self.executor_instruction_mutations.drain(..) {
                     mutation(&mut executor_instruction);
                 }
 
-                let mut message = wrapped_message(&executor_instruction, &context.authorities);
-                let VersionedMessage::Legacy(legacy_message) = &mut message else {
-                    panic!("expected legacy message");
+                let mut message =
+                    authorization_message(&executor_instruction, &context.authorities);
+                let VersionedMessage::V1(v1_message) = &mut message else {
+                    panic!("expected v1 message");
                 };
                 for mutation in self.message_mutations.drain(..) {
-                    mutation(legacy_message);
+                    mutation(v1_message);
                 }
                 message
             }
@@ -180,8 +180,8 @@ impl<'a> SubmitBuilder<'a> {
         let mut transaction = VersionedTransaction::try_new(message, &signers).unwrap();
 
         if !self.message_tampers.is_empty() {
-            let VersionedMessage::Legacy(msg) = &mut transaction.message else {
-                panic!("tamper_message requires a legacy wrapped message");
+            let VersionedMessage::V1(msg) = &mut transaction.message else {
+                panic!("tamper_message requires a v1 authorization message");
             };
             for tamper in self.message_tampers.drain(..) {
                 tamper(msg);
@@ -247,7 +247,7 @@ impl<'a> SubmitBuilder<'a> {
         if key == solana_system_interface::program::id() {
             return mollusk_svm::program::keyed_account_for_system_program();
         }
-        if key == spl_legacy_message_executor_interface::id() {
+        if key == spl_message_executor_interface::id() {
             return stub_executor::keyed_account();
         }
         // Only the first authority's programmatic signer is prefunded. Promotion tests that

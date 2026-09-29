@@ -65,7 +65,7 @@
             },
             "display": {
               "kind": "structFieldDisplayNode",
-              "label": "Signed message"
+              "label": "Authorization message"
             }
           }
         ],
@@ -78,7 +78,7 @@
         ],
         "display": {
           "kind": "instructionDisplayNode",
-          "intent": "Verify wrapped message and invoke its executor"
+          "intent": "Verify authorization message and invoke its executor"
         },
         "remainingAccounts": [
           {
@@ -86,13 +86,13 @@
             "isOptional": false,
             "isSigner": false,
             "docs": [
-              "One account for each key in the wrapped message's static account-key list, in the same order."
+              "One account for each key in the authorization message's static account-key list, in the same order."
             ],
             "value": {
               "kind": "resolverValueNode",
-              "name": "resolveSubmitMessageAccounts",
+              "name": "resolveAuthorizationMessageAccounts",
               "docs": [
-                "Preserves each wrapped message account's writable role without marking it as an outer Submit signer."
+                "Preserves each authorization message account's writable role without marking it as a relay transaction signer."
               ],
               "dependsOn": [
                 {
@@ -103,7 +103,7 @@
             },
             "display": {
               "kind": "instructionAccountDisplayNode",
-              "label": "Wrapped message accounts"
+              "label": "Authorization message accounts"
             }
           }
         ]
@@ -138,45 +138,51 @@
     "errors": [
       {
         "kind": "errorNode",
-        "name": "invalidWrappedMessage",
+        "name": "invalidMessage",
         "code": 0,
-        "message": "The wrapped message failed sanitization"
+        "message": "The authorization message failed sanitization"
       },
       {
         "kind": "errorNode",
         "name": "invalidExecutorInstructionCount",
         "code": 1,
-        "message": "The wrapped message must contain exactly one executor instruction"
+        "message": "The authorization message must contain exactly one executor instruction"
       },
       {
         "kind": "errorNode",
         "name": "accountKeyMismatch",
         "code": 2,
-        "message": "A Submit account differs from the wrapped message key at the same index"
+        "message": "A Submit account differs from the authorization message key at the same index"
       },
       {
         "kind": "errorNode",
         "name": "invalidSignature",
         "code": 3,
-        "message": "An authority signature failed verification against the wrapped message"
-      },
-      {
-        "kind": "errorNode",
-        "name": "invalidExecutorAccountIndex",
-        "code": 4,
-        "message": "The executor references an index outside the static account-key list"
+        "message": "An authority signature failed verification against the authorization message"
       },
       {
         "kind": "errorNode",
         "name": "disallowedExecutorInstruction",
-        "code": 5,
+        "code": 4,
         "message": "The executor program and instruction pair is not permitted by this signer program"
       },
       {
         "kind": "errorNode",
         "name": "invalidSignatureCount",
+        "code": 5,
+        "message": "The authority signature count does not match the authorization message."
+      },
+      {
+        "kind": "errorNode",
+        "name": "unsupportedMessageVersion",
         "code": 6,
-        "message": "The authority signature count does not match the wrapped message."
+        "message": "The authorization message is not a v1 message"
+      },
+      {
+        "kind": "errorNode",
+        "name": "unsupportedTransactionConfig",
+        "code": 7,
+        "message": "The authorization message sets transaction config fields"
       }
     ]
   },
@@ -266,7 +272,7 @@
               },
               "display": {
                 "kind": "structFieldDisplayNode",
-                "label": "Wrapped message"
+                "label": "Execution message"
               }
             }
           ],
@@ -279,7 +285,7 @@
           ],
           "display": {
             "kind": "instructionDisplayNode",
-            "intent": "Execute all instructions in a wrapped message"
+            "intent": "Execute all instructions in an execution message"
           },
           "remainingAccounts": [
             {
@@ -287,13 +293,13 @@
               "isOptional": false,
               "isSigner": "either",
               "docs": [
-                "One account for each key in the wrapped message's static account-key list, in the same order."
+                "One account for each key in the execution message's static account-key list, in the same order."
               ],
               "value": {
                 "kind": "resolverValueNode",
-                "name": "resolveMessageAccounts",
+                "name": "resolveExecutionMessageAccounts",
                 "docs": [
-                  "Preserves each wrapped message account's signer and writable role."
+                  "Preserves each execution message account's signer and writable role."
                 ],
                 "dependsOn": [
                   {
@@ -304,7 +310,7 @@
               },
               "display": {
                 "kind": "instructionAccountDisplayNode",
-                "label": "Wrapped message accounts"
+                "label": "Execution message accounts"
               }
             }
           ]
@@ -321,19 +327,31 @@
           "kind": "errorNode",
           "name": "invalidMessage",
           "code": 1,
-          "message": "The legacy message fails sanitization or contains duplicate keys"
+          "message": "The v1 message fails sanitization or contains duplicate keys"
         },
         {
           "kind": "errorNode",
           "name": "messageAccountsMismatch",
           "code": 2,
-          "message": "The passed accounts do not match the wrapped message's account keys"
+          "message": "The passed accounts do not match the execution message's account keys"
         },
         {
           "kind": "errorNode",
           "name": "nonceMismatch",
           "code": 3,
           "message": "The message's recent blockhash does not match the stored nonce"
+        },
+        {
+          "kind": "errorNode",
+          "name": "unsupportedMessageVersion",
+          "code": 4,
+          "message": "The execution message is not a v1 message"
+        },
+        {
+          "kind": "errorNode",
+          "name": "unsupportedTransactionConfig",
+          "code": 5,
+          "message": "The execution message sets transaction config fields"
         }
       ]
     },

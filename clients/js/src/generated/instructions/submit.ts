@@ -29,7 +29,7 @@ import {
     type InstructionWithData,
     type ReadonlyUint8Array,
 } from '@solana/kit';
-import { resolveSubmitMessageAccounts } from '../../hooked';
+import { resolveAuthorizationMessageAccounts } from '../../hooked';
 import { ED25519_SIGNER_PROGRAM_ADDRESS } from '../programs';
 
 export const SUBMIT_DISCRIMINATOR = 0;
@@ -93,7 +93,7 @@ export function getSubmitInstruction<TProgramAddress extends Address = typeof ED
     const resolverScope = { programAddress, args };
 
     // Remaining accounts.
-    const remainingAccounts: AccountMeta[] = resolveSubmitMessageAccounts(resolverScope);
+    const remainingAccounts: AccountMeta[] = resolveAuthorizationMessageAccounts(resolverScope);
 
     return Object.freeze({
         accounts: remainingAccounts,

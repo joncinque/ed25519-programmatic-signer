@@ -9,14 +9,17 @@ import {
     SolanaError,
     type CompiledTransactionMessage,
     type CompiledTransactionMessageWithLifetime,
+    TransactionVersion,
 } from '@solana/kit';
 import { describe, expect, it } from 'vitest';
 
 import { getExecuteInstruction, getSubmitInstruction, NONCE_PROGRAM_ADDRESS } from '../src';
 
-const MESSAGE_VERSIONS = ['legacy', 0, 1] as const;
+const UNSUPPORTED_MESSAGE_VERSIONS = [
+    ['legacy', 'legacy'],
+    [0, 'v0'],
+] as const;
 
-type MessageVersion = (typeof MESSAGE_VERSIONS)[number];
 type TestMessage = CompiledTransactionMessage & CompiledTransactionMessageWithLifetime;
 
 const addressDecoder = getAddressDecoder();
@@ -44,9 +47,8 @@ const STATIC_ACCOUNTS = [
 ];
 
 const getTestMessage = (
-    version: MessageVersion,
+    version: TransactionVersion,
     config: Readonly<{
-        includeAddressTableLookup?: boolean;
         includeLoader?: boolean;
         numReadonlySignerAccounts?: number;
         programAccountIndexes?: readonly number[];
@@ -80,9 +82,7 @@ const getTestMessage = (
 
     if (version === 0) {
         return {
-            addressTableLookups: config.includeAddressTableLookup
-                ? [{ lookupTableAddress: getTestAddress(20), readonlyIndexes: [0], writableIndexes: [] }]
-                : [],
+            addressTableLookups: [],
             header,
             instructions,
             lifetimeToken: LIFETIME_TOKEN,
@@ -146,8 +146,8 @@ const expectedSubmitAccounts = [
 ];
 
 describe('remaining account resolvers', () => {
-    it.each(MESSAGE_VERSIONS)('resolves account order and permissions for a %s message', version => {
-        expect(getExecuteAccounts(getTestMessage(version))).toEqual([
+    it('resolves account order and permissions for a v1 execution message', () => {
+        expect(getExecuteAccounts(getTestMessage(1))).toEqual([
             { address: NONCE_AUTHORITY.address, role: AccountRole.READONLY_SIGNER, signer: NONCE_AUTHORITY },
             { address: NONCE_ACCOUNT, role: AccountRole.WRITABLE },
             { address: NONCE_PROGRAM_ADDRESS, role: AccountRole.READONLY },
@@ -155,12 +155,24 @@ describe('remaining account resolvers', () => {
         ]);
     });
 
-    it.each(MESSAGE_VERSIONS)('removes signer privileges from a submitted %s message', version => {
-        expect(getSubmitAccounts(getTestMessage(version))).toEqual(expectedSubmitAccounts);
+    it('removes signer privileges from a v1 authorization message', () => {
+        expect(getSubmitAccounts(getTestMessage(1))).toEqual(expectedSubmitAccounts);
+    });
+
+    it.each(UNSUPPORTED_MESSAGE_VERSIONS)('rejects a %s execution message', (version, label) => {
+        expect(() => getExecuteAccounts(getTestMessage(version))).toThrow(
+            `The message executor only supports v1 execution messages, got a ${label} message`,
+        );
+    });
+
+    it.each(UNSUPPORTED_MESSAGE_VERSIONS)('rejects a %s authorization message', (version, label) => {
+        expect(() => getSubmitAccounts(getTestMessage(version))).toThrow(
+            `The signer program only supports v1 authorization messages, got a ${label} message`,
+        );
     });
 
     it('keeps an invoked program writable when loader v3 is present', () => {
-        const message = getTestMessage('legacy', { includeLoader: true });
+        const message = getTestMessage(1, { includeLoader: true });
         const executeAccounts = getRemainingExecuteAccounts(message);
         const submitAccounts = getSubmitAccounts(message);
         const expectedProgramAccounts = [
@@ -173,9 +185,7 @@ describe('remaining account resolvers', () => {
     });
 
     it('demotes every program account used by multiple instructions', () => {
-        const remainingAccounts = getRemainingExecuteAccounts(
-            getTestMessage('legacy', { programAccountIndexes: [2, 3] }),
-        );
+        const remainingAccounts = getRemainingExecuteAccounts(getTestMessage(1, { programAccountIndexes: [2, 3] }));
 
         expect(remainingAccounts.slice(2, 4)).toEqual([
             { address: TEST_ACCOUNTS.writable, role: AccountRole.READONLY },
@@ -183,14 +193,8 @@ describe('remaining account resolvers', () => {
         ]);
     });
 
-    it('uses only static accounts for a v0 message with an unused address table lookup', () => {
-        const message = getTestMessage(0, { includeAddressTableLookup: true });
-
-        expect(getSubmitAccounts(message)).toEqual(expectedSubmitAccounts);
-    });
-
     it('preserves signer status when demoting a program account', () => {
-        const message = getTestMessage('legacy', {
+        const message = getTestMessage(1, {
             numReadonlySignerAccounts: 0,
             programAccountIndexes: [1],
         });
@@ -207,8 +211,8 @@ describe('remaining account resolvers', () => {
         });
     });
 
-    it('rejects trailing bytes after a compiled message', () => {
-        const message = encodeMessage(getTestMessage('legacy'));
+    it('rejects trailing bytes after an execution message', () => {
+        const message = encodeMessage(getTestMessage(1));
 
         expect(() =>
             getExecuteInstruction({
@@ -224,8 +228,8 @@ describe('remaining account resolvers', () => {
         );
     });
 
-    it('rejects trailing bytes after a submitted message', () => {
-        const message = encodeMessage(getTestMessage('legacy'));
+    it('rejects trailing bytes after an authorization message', () => {
+        const message = encodeMessage(getTestMessage(1));
 
         expect(() =>
             getSubmitInstruction({

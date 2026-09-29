@@ -1,5 +1,5 @@
-//! Verifies authority signatures over a wrapped message, then invokes its executor instruction
-//! while signing for explicitly authorized programmatic signers.
+//! Verifies authority signatures over an authorization message, then invokes its executor
+//! instruction while signing for explicitly authorized programmatic signers.
 
 use {
     crate::executor_policy,
@@ -11,7 +11,7 @@ use {
         error::ProgramError,
         instruction::{InstructionAccount, InstructionView},
     },
-    solana_message::{VersionedMessage, compiled_instruction::CompiledInstruction},
+    solana_message::{VersionedMessage, compiled_instruction::CompiledInstruction, v1},
     solana_signature::Signature,
     spl_ed25519_signer_interface::{error::Error, pda::ProgrammaticSigner},
 };
@@ -23,19 +23,29 @@ struct AuthorizedSigner {
     bump_seed: [u8; 1],
 }
 
-/// Processes the signatures and signed message, then executes its single executor instruction.
+/// Processes the signatures and authorization message, then executes its single executor
+/// instruction.
 pub fn process_submit(
     program_id: &Address,
     accounts: &[AccountView],
     signatures: &[Signature],
     message: &VersionedMessage,
 ) -> ProgramResult {
-    message
-        .sanitize()
-        .map_err(|_| Error::InvalidWrappedMessage)?;
+    let VersionedMessage::V1(message) = message else {
+        return Err(Error::UnsupportedMessageVersion.into());
+    };
+
+    // Validation also rejects duplicate account keys, so each key has one set of privileges.
+    message.validate().map_err(|_| Error::InvalidMessage)?;
+
+    // The authorization message is only an authorization envelope. Reject config fields so
+    // authorities never approve fees or limits that have no effect.
+    if message.config != v1::TransactionConfig::default() {
+        return Err(Error::UnsupportedTransactionConfig.into());
+    }
 
     // Exactly one executor instruction is expected
-    let [executor_instruction] = message.instructions() else {
+    let [executor_instruction] = message.instructions.as_slice() else {
         return Err(Error::InvalidExecutorInstructionCount.into());
     };
 
@@ -50,15 +60,15 @@ pub fn process_submit(
     invoke_executor_instruction(message, &executor_instruction, &authorized_signers)
 }
 
-/// The executor instruction resolved against outer `Submit` accounts proven to mirror the
-/// wrapped message's static account keys.
+/// The executor instruction resolved against relay accounts proven to mirror the
+/// authorization message's static account keys.
 struct CheckedExecutorInstruction<'a> {
     program_id: &'a Address,
     accounts: Vec<ExecutorAccount<'a>>,
     data: &'a [u8],
 }
 
-/// An executor account resolved to its outer `Submit` account and its signed message index.
+/// An executor account resolved to its relay account and its authorization message index.
 struct ExecutorAccount<'a> {
     account: &'a AccountView,
     index: usize,
@@ -66,50 +76,48 @@ struct ExecutorAccount<'a> {
 
 impl<'a> CheckedExecutorInstruction<'a> {
     fn try_new(
-        outer_accounts: &'a [AccountView],
-        message: &'a VersionedMessage,
+        relay_accounts: &'a [AccountView],
+        message: &'a v1::Message,
         executor_instruction: &'a CompiledInstruction,
     ) -> Result<Self, ProgramError> {
-        let wrapped_account_keys = message.static_account_keys();
+        let message_account_keys = &message.account_keys;
 
-        // The relayer must supply the wrapped message's account keys in signed order, so
+        // The relayer must supply the authorization message's account keys in signed order, so
         // executor account indexes resolve to the accounts the authorities signed.
-        if outer_accounts.len() < wrapped_account_keys.len() {
+        if relay_accounts.len() < message_account_keys.len() {
             return Err(ProgramError::NotEnoughAccountKeys);
         }
 
-        if outer_accounts.len() > wrapped_account_keys.len() {
+        if relay_accounts.len() > message_account_keys.len() {
             return Err(Error::AccountKeyMismatch.into());
         }
 
-        for (outer_account, wrapped_key) in outer_accounts.iter().zip(wrapped_account_keys) {
-            if outer_account.address() != wrapped_key {
+        for (relay_account, message_key) in relay_accounts.iter().zip(message_account_keys) {
+            if relay_account.address() != message_key {
                 return Err(Error::AccountKeyMismatch.into());
             }
         }
 
-        // The executor program is selected by the signed message, not by a separate `Submit`
-        // account. Infallible: sanitization guarantees the index hits the static account keys.
-        let program_id = wrapped_account_keys
+        // The executor program is selected by the authorization message, not by a separate `Submit`
+        // account. Infallible: validation guarantees the index is within the account keys.
+        let program_id = message_account_keys
             .get(usize::from(executor_instruction.program_id_index))
             .unwrap();
 
         // Only allow trusted executor entrypoints to receive promoted signers.
         executor_policy::validate(program_id, &executor_instruction.data)?;
 
-        // V0 address table lookups are never resolved, so every executor account index must
-        // hit the static account keys, which the outer accounts mirror one-to-one.
+        // Infallible: validation guarantees every executor account index is within the account
+        // keys, which the relay accounts mirror one-to-one.
         let accounts = executor_instruction
             .accounts
             .iter()
             .map(|account_index| {
                 let index = usize::from(*account_index);
-                let account = outer_accounts
-                    .get(index)
-                    .ok_or(Error::InvalidExecutorAccountIndex)?;
-                Ok(ExecutorAccount { account, index })
+                let account = relay_accounts.get(index).unwrap();
+                ExecutorAccount { account, index }
             })
-            .collect::<Result<Vec<_>, ProgramError>>()?;
+            .collect();
 
         Ok(Self {
             program_id,
@@ -121,23 +129,20 @@ impl<'a> CheckedExecutorInstruction<'a> {
 
 fn verify_authority_signatures<'a>(
     signatures: &[Signature],
-    message: &'a VersionedMessage,
+    message: &'a v1::Message,
 ) -> Result<&'a [Address], ProgramError> {
-    let required_signatures = usize::from(message.header().num_required_signatures);
+    let required_signatures = usize::from(message.header.num_required_signatures);
     if signatures.len() != required_signatures {
         return Err(Error::InvalidSignatureCount.into());
     }
 
     // Required signers occupy the leading account key slots. Signatures use the same indexes.
-    // Infallible: message sanitization guarantees a static account key for every required signer.
-    let authorities = message
-        .static_account_keys()
-        .get(..required_signatures)
-        .unwrap();
+    // Infallible: message validation guarantees an account key for every required signer.
+    let authorities = message.account_keys.get(..required_signatures).unwrap();
 
     let message_bytes = message.serialize();
 
-    // Verify each authority signed the wrapped transaction message
+    // Verify each authority signed the authorization message
     for (authority, signature) in authorities.iter().zip(signatures) {
         brine_ed25519::verify::<Sha512>(
             authority,
@@ -178,7 +183,7 @@ fn collect_authorized_signers(
 }
 
 fn invoke_executor_instruction(
-    message: &VersionedMessage,
+    message: &v1::Message,
     executor_instruction: &CheckedExecutorInstruction,
     authorized_signers: &[AuthorizedSigner],
 ) -> ProgramResult {
@@ -204,8 +209,9 @@ fn invoke_executor_instruction(
             .iter()
             .any(|signer| signer.programmatic_signer_index == executor_account.index);
 
-        // Real outer signers, such as a relayer co-signer, can be forwarded to the executor
-        let is_forwarded_outer_signer =
+        // Real relay transaction signers, such as a relayer co-signer, can be forwarded to the
+        // executor
+        let is_forwarded_relay_signer =
             message.is_signer(executor_account.index) && executor_account.account.is_signer();
 
         let is_writable = message.is_maybe_writable_with_reserved_addresses(
@@ -213,12 +219,13 @@ fn invoke_executor_instruction(
             None::<&BTreeSet<_>>,
         );
 
-        // CPI privileges come from the wrapped message plus authorized PDA promotion.
-        // Outer over-grants are not forwarded. Under-grants fail runtime privilege checks.
+        // CPI privileges come from the authorization message plus authorized PDA promotion.
+        // Relay account over-grants are not forwarded. Under-grants fail runtime privilege
+        // checks.
         instruction_accounts.push(InstructionAccount::new(
             executor_account.account.address(),
             is_writable,
-            is_promoted || is_forwarded_outer_signer,
+            is_promoted || is_forwarded_relay_signer,
         ));
         account_views.push(executor_account.account);
     }
