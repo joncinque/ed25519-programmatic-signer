@@ -194,13 +194,13 @@ pub async fn submits_authority_signed_transfer_and_rejects_replay(env: &TestEnv)
     let authority_entry = signature_entry(&authority, &message);
 
     assert_submitted(
-        &submit(env, &message, &["--authority", &authority_entry], ""),
+        &submit(env, &message, &["--signer", &authority_entry], ""),
         None,
     );
     test.assert_received(env, 1).await;
 
     // The nonce has advanced, so the same signatures cannot be submitted again.
-    let replay = submit(env, &message, &["--authority", &authority_entry], "");
+    let replay = submit(env, &message, &["--signer", &authority_entry], "");
     assert_failure(
         &replay,
         &format!(
@@ -230,9 +230,9 @@ pub async fn submits_with_forwarded_ordinary_signer(env: &TestEnv) {
             env,
             &message,
             &[
-                "--authority",
-                &signature_entry(&authority, &message),
                 "--signer",
+                &signature_entry(&authority, &message),
+                "--relay-signer",
                 ordinary_file.path().to_str().unwrap(),
             ],
             "y",
@@ -265,9 +265,9 @@ pub async fn submits_with_plain_key_nonce_authority(env: &TestEnv) {
             env,
             &message,
             &[
-                "--authority",
-                &signature_entry(&authority, &message),
                 "--signer",
+                &signature_entry(&authority, &message),
+                "--relay-signer",
                 nonce_authority_file.path().to_str().unwrap(),
             ],
             "y",
@@ -299,7 +299,7 @@ pub async fn submits_with_fee_payer_as_forwarded_signer(env: &TestEnv) {
         &submit(
             env,
             &message,
-            &["--authority", &signature_entry(&authority, &message)],
+            &["--signer", &signature_entry(&authority, &message)],
             "y",
         ),
         Some(Summary {
@@ -332,9 +332,9 @@ pub async fn submits_authority_signatures_in_any_order(env: &TestEnv) {
             env,
             &message,
             &[
-                "--authority",
+                "--signer",
                 &signature_entry(&authorities[0], &message),
-                "--authority",
+                "--signer",
                 &signature_entry(&authorities[1], &message),
             ],
             "",
@@ -364,9 +364,9 @@ pub async fn submits_with_forwarded_authority(env: &TestEnv) {
             env,
             &message,
             &[
-                "--authority",
-                &signature_entry(&authority, &message),
                 "--signer",
+                &signature_entry(&authority, &message),
+                "--relay-signer",
                 authority_file.path().to_str().unwrap(),
             ],
             "y",
@@ -406,7 +406,7 @@ pub async fn submits_with_authority_as_execution_message_non_signer(env: &TestEn
         &submit(
             env,
             &message,
-            &["--authority", &signature_entry(&authority, &message)],
+            &["--signer", &signature_entry(&authority, &message)],
             "",
         ),
         None,
@@ -438,9 +438,9 @@ pub async fn rejects_nonce_authority_mismatch(env: &TestEnv) {
             env,
             &message,
             &[
-                "--authority",
-                &signature_entry(&authority, &message),
                 "--signer",
+                &signature_entry(&authority, &message),
+                "--relay-signer",
                 other_authority_file.path().to_str().unwrap(),
             ],
             "",
@@ -473,9 +473,9 @@ pub async fn cancels_when_forwarded_signer_declines(env: &TestEnv) {
         env,
         &message,
         &[
-            "--authority",
-            &signature_entry(&authority, &message),
             "--signer",
+            &signature_entry(&authority, &message),
+            "--relay-signer",
             ordinary_file.path().to_str().unwrap(),
         ],
         "n\n",
@@ -510,9 +510,9 @@ pub async fn submits_quietly_without_confirmation(env: &TestEnv) {
         env,
         &message,
         &[
-            "--authority",
-            &signature_entry(&authority, &message),
             "--signer",
+            &signature_entry(&authority, &message),
+            "--relay-signer",
             ordinary_file.path().to_str().unwrap(),
             "--quiet",
             "--yes",

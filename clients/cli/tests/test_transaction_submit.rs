@@ -133,9 +133,9 @@ fn assert_failure(output: &Output, expected: &str) {
 fn accepts_authority_signatures_and_forwarded_signers() {
     let env = SubmitTestEnv::new();
     let output = env.submit_message(&[
-        "--authority",
-        &env.authority_entry(),
         "--signer",
+        &env.authority_entry(),
+        "--relay-signer",
         &env.keypair_file(&env.ordinary),
     ]);
     env.assert_passes_offline_checks(&output);
@@ -145,7 +145,7 @@ fn accepts_authority_signatures_and_forwarded_signers() {
 fn accepts_fee_payer_as_forwarded_signer() {
     let env = SubmitTestEnv::new();
     let output = env.submit_message(&[
-        "--authority",
+        "--signer",
         &env.authority_entry(),
         "--fee-payer",
         &env.keypair_file(&env.ordinary),
@@ -248,17 +248,17 @@ fn rejects_execution_message_the_executor_cannot_invoke(
 #[test_case("missing separator", "invalid authority: expected ADDRESS=SIGNATURE"; "missing separator")]
 #[test_case("invalid=invalid", "invalid authority address"; "invalid address")]
 #[test_case("11111111111111111111111111111111=invalid", "invalid authority signature"; "invalid signature")]
-fn rejects_malformed_authority_args(entry: &str, expected: &str) {
+fn rejects_malformed_signer_args(entry: &str, expected: &str) {
     let env = SubmitTestEnv::new();
-    assert_failure(&env.submit_message(&["--authority", entry]), expected);
+    assert_failure(&env.submit_message(&["--signer", entry]), expected);
 }
 
 #[test]
-fn rejects_authority_arg_not_on_authorization_message() {
+fn rejects_signer_arg_not_on_authorization_message() {
     let env = SubmitTestEnv::new();
     let stranger = Keypair::new();
     assert_failure(
-        &env.submit_message(&["--authority", &signature_entry(&stranger, &env.message)]),
+        &env.submit_message(&["--signer", &signature_entry(&stranger, &env.message)]),
         &format!(
             "{} is not a signer on the authorization message",
             stranger.pubkey()
@@ -267,7 +267,7 @@ fn rejects_authority_arg_not_on_authorization_message() {
 }
 
 #[test]
-fn rejects_authority_arg_for_a_different_message() {
+fn rejects_signer_arg_for_a_different_message() {
     let env = SubmitTestEnv::new();
     let other = SubmitTestEnv::new();
     let entry = format!(
@@ -276,16 +276,16 @@ fn rejects_authority_arg_for_a_different_message() {
         env.authority.sign_message(&other.message.serialize())
     );
     assert_failure(
-        &env.submit_message(&["--authority", &entry]),
+        &env.submit_message(&["--signer", &entry]),
         &format!("invalid signature for authority {}", env.authority.pubkey()),
     );
 }
 
 #[test]
-fn rejects_authority_without_authority_arg() {
+fn rejects_authority_without_signer_arg() {
     let env = SubmitTestEnv::new();
     assert_failure(
-        &env.submit_message(&["--signer", &env.keypair_file(&env.ordinary)]),
+        &env.submit_message(&["--relay-signer", &env.keypair_file(&env.ordinary)]),
         &format!(
             "missing signature for authority {}, authorities sign with `transaction sign`",
             env.authority.pubkey()
@@ -295,14 +295,19 @@ fn rejects_authority_without_authority_arg() {
 
 #[test_case(false; "unsigned")]
 #[test_case(true; "already signed")]
-fn rejects_signer_arg_for_non_forwarded_authority(with_signature: bool) {
+fn rejects_relay_signer_arg_for_non_forwarded_authority(with_signature: bool) {
     let env = SubmitTestEnv::new();
     let authority_entry = env.authority_entry();
     let authority_file = env.keypair_file(&env.authority);
     let ordinary_file = env.keypair_file(&env.ordinary);
-    let mut args = vec!["--signer", &authority_file, "--signer", &ordinary_file];
+    let mut args = vec![
+        "--relay-signer",
+        &authority_file,
+        "--relay-signer",
+        &ordinary_file,
+    ];
     if with_signature {
-        args.extend(["--authority", &authority_entry]);
+        args.extend(["--signer", &authority_entry]);
     }
     assert_failure(
         &env.submit_message(&args),
@@ -315,47 +320,48 @@ fn rejects_signer_arg_for_non_forwarded_authority(with_signature: bool) {
 }
 
 #[test]
-fn rejects_authority_arg_for_non_authority() {
+fn rejects_signer_arg_for_non_authority() {
     let env = SubmitTestEnv::new();
     assert_failure(
         &env.submit_message(&[
-            "--authority",
-            &env.authority_entry(),
-            "--authority",
-            &signature_entry(&env.ordinary, &env.message),
             "--signer",
+            &env.authority_entry(),
+            "--signer",
+            &signature_entry(&env.ordinary, &env.message),
+            "--relay-signer",
             &env.keypair_file(&env.ordinary),
         ]),
         &format!(
-            "{} is not a PDA authority on the authorization message; pass it with --signer",
+            "{} is not a PDA authority on the authorization message; pass it with --relay-signer",
             env.ordinary.pubkey()
         ),
     );
 }
 
 #[test]
-fn rejects_forwarded_signer_without_signer_arg() {
+fn rejects_forwarded_signer_without_relay_signer_arg() {
     let env = SubmitTestEnv::new();
     assert_failure(
-        &env.submit_message(&["--authority", &env.authority_entry()]),
+        &env.submit_message(&["--signer", &env.authority_entry()]),
         &format!(
-            "{} is a forwarded signer and must sign the relay transaction; pass it with --signer",
+            "{} is a forwarded signer and must sign the relay transaction; pass it with \
+             --relay-signer",
             env.ordinary.pubkey()
         ),
     );
 }
 
 #[test]
-fn rejects_signer_arg_not_on_authorization_message() {
+fn rejects_relay_signer_arg_not_on_authorization_message() {
     let env = SubmitTestEnv::new();
     let stranger = Keypair::new();
     assert_failure(
         &env.submit_message(&[
-            "--authority",
+            "--signer",
             &env.authority_entry(),
-            "--signer",
+            "--relay-signer",
             &env.keypair_file(&env.ordinary),
-            "--signer",
+            "--relay-signer",
             &env.keypair_file(&stranger),
         ]),
         &format!(
@@ -367,12 +373,12 @@ fn rejects_signer_arg_not_on_authorization_message() {
 
 /// An authority that is also an execution message signer needs its `transaction sign` signature
 /// for the authorization message and a local signer for the relay transaction.
-#[test_case(true, true, None; "authority and signer")]
-#[test_case(true, false, Some("{} is a forwarded signer and must sign the relay transaction"); "authority only")]
-#[test_case(false, true, Some("missing signature for authority {}"); "signer only")]
-fn forwarded_authority_needs_authority_and_signer_args(
+#[test_case(true, true, None; "signer and relay signer")]
+#[test_case(true, false, Some("{} is a forwarded signer and must sign the relay transaction"); "signer only")]
+#[test_case(false, true, Some("missing signature for authority {}"); "relay signer only")]
+fn forwarded_authority_needs_signer_and_relay_signer_args(
     with_signature: bool,
-    with_signer: bool,
+    with_relay_signer: bool,
     expected: Option<&str>,
 ) {
     let env = SubmitTestEnv::new();
@@ -398,10 +404,10 @@ fn forwarded_authority_needs_authority_and_signer_args(
     let authority_file = env.keypair_file(&env.authority);
     let mut args = vec![];
     if with_signature {
-        args.extend(["--authority", authority_entry.as_str()]);
+        args.extend(["--signer", authority_entry.as_str()]);
     }
-    if with_signer {
-        args.extend(["--signer", authority_file.as_str()]);
+    if with_relay_signer {
+        args.extend(["--relay-signer", authority_file.as_str()]);
     }
     let output = env.submit(&encode(&message), &args);
     match expected {
@@ -411,10 +417,10 @@ fn forwarded_authority_needs_authority_and_signer_args(
 }
 
 /// An authority whose own address the executor uses only as a non-signer is not forwarded.
-#[test_case(false, None; "authority only")]
-#[test_case(true, Some("{} is not a forwarded signer on the authorization message, PDA authorities sign with `transaction sign`"); "with signer")]
+#[test_case(false, None; "signer only")]
+#[test_case(true, Some("{} is not a forwarded signer on the authorization message, PDA authorities sign with `transaction sign`"); "with relay signer")]
 fn authority_as_execution_message_non_signer_is_not_forwarded(
-    with_signer: bool,
+    with_relay_signer: bool,
     expected: Option<&str>,
 ) {
     let env = SubmitTestEnv::new();
@@ -434,9 +440,9 @@ fn authority_as_execution_message_non_signer_is_not_forwarded(
     );
     let authority_entry = signature_entry(&env.authority, &message);
     let authority_file = env.keypair_file(&env.authority);
-    let mut args = vec!["--authority", authority_entry.as_str()];
-    if with_signer {
-        args.extend(["--signer", authority_file.as_str()]);
+    let mut args = vec!["--signer", authority_entry.as_str()];
+    if with_relay_signer {
+        args.extend(["--relay-signer", authority_file.as_str()]);
     }
     let output = env.submit(&encode(&message), &args);
     match expected {
@@ -465,7 +471,7 @@ fn rejects_message_signer_unused_by_execute() {
     assert_failure(
         &env.submit(
             &encode(&message),
-            &["--authority", &signature_entry(&env.authority, &message)],
+            &["--signer", &signature_entry(&env.authority, &message)],
         ),
         &format!("{unused} is neither a PDA authority nor a signer the executor uses"),
     );

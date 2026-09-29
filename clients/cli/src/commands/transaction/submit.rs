@@ -31,8 +31,8 @@ pub(super) struct SubmitCommand {
 
     /// Authority address and signature returned by `transaction sign`. Repeat for each PDA
     /// authority.
-    #[clap(long = "authority", value_name = "ADDRESS=SIGNATURE")]
-    authorities: Vec<String>,
+    #[clap(long = "signer", value_name = "ADDRESS=SIGNATURE")]
+    signers: Vec<String>,
 
     /// Signer source for a signer the executor uses directly: a keypair file, usb:// URL,
     /// prompt:// URL, or the ASK keyword. Repeat for each signer. Each is a required signer on
@@ -40,7 +40,7 @@ pub(super) struct SubmitCommand {
     /// the relay transaction, which forwards its signer privilege to the executor. The fee payer
     /// is always a relay transaction signer.
     #[clap(long, value_parser = keypair_source_parser())]
-    signer: Vec<SignerSource>,
+    relay_signer: Vec<SignerSource>,
 
     /// Hide the signing summary shown when a relay signer signs the authorization message.
     /// Confirmation prompts and errors are still shown.
@@ -64,7 +64,7 @@ pub(super) async fn run(
         [..usize::from(authorization_message.header.num_required_signatures)]
         .to_vec();
     let authority_signatures = verify_authority_signatures(
-        &command.authorities,
+        &command.signers,
         &authorization_message,
         &required_signers,
         &execute,
@@ -73,8 +73,8 @@ pub(super) async fn run(
     let fee_payer = client.fee_payer()?;
     let fee_payer_address = fee_payer.try_pubkey()?;
     let mut relay_signers = vec![(fee_payer_address, fee_payer)];
-    for source in &command.signer {
-        let signer = client.load_signer(source, "signer")?;
+    for source in &command.relay_signer {
+        let signer = client.load_signer(source, "relay signer")?;
         let address = signer.try_pubkey()?;
         // Relay signers only sign for accounts the executor uses directly. Authorities sign
         // through `transaction sign`.
@@ -123,7 +123,7 @@ pub(super) async fn run(
         ensure!(
             !is_forwarded || is_relay(address),
             "{address} is a forwarded signer and must sign the relay transaction; pass it with \
-             --signer"
+             --relay-signer"
         );
     }
 
@@ -306,7 +306,8 @@ fn verify_authority_signatures(
         );
         ensure!(
             execute.is_pda_authority(&address),
-            "{address} is not a PDA authority on the authorization message; pass it with --signer"
+            "{address} is not a PDA authority on the authorization message; pass it with \
+             --relay-signer"
         );
         ensure!(
             signature.verify(address.as_ref(), &message_bytes),
