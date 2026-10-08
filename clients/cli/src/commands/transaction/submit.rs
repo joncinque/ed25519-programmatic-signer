@@ -27,8 +27,8 @@ pub(super) struct SubmitCommand {
     #[clap(long)]
     authorization_message: String,
 
-    /// Authority address and signature returned by `transaction sign`. Repeat for each PDA
-    /// authority.
+    /// Authority address and signature returned by `transaction sign`, or made externally over
+    /// its authorization message. Repeat for each PDA authority.
     #[clap(long = "signer", value_name = "ADDRESS=SIGNATURE")]
     signers: Vec<String>,
 

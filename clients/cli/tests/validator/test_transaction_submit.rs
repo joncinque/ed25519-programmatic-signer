@@ -562,7 +562,7 @@ pub async fn submits_quietly_without_confirmation(env: &TestEnv) {
 }
 
 /// Sign `execution_message` offline against `nonce_hash` with `transaction sign`, returning its
-/// single entry.
+/// output.
 fn sign(
     env: &TestEnv,
     test: &SubmitTest,
@@ -571,12 +571,35 @@ fn sign(
     nonce_hash: &str,
     authority: &Keypair,
 ) -> serde_json::Value {
+    let authority_file = keypair_file(authority);
+    let value = run_sign(
+        env,
+        test,
+        execution_message,
+        nonce_authority,
+        nonce_hash,
+        &authority.pubkey(),
+        &["--signer", authority_file.path().to_str().unwrap(), "--yes"],
+    );
+    assert_eq!(value["signatures"].as_array().unwrap().len(), 1);
+    value
+}
+
+/// Run `transaction sign` for a single authority with `extra` arguments, returning its output.
+fn run_sign(
+    env: &TestEnv,
+    test: &SubmitTest,
+    execution_message: &v1::Message,
+    nonce_authority: &Address,
+    nonce_hash: &str,
+    authority: &Address,
+    extra: &[&str],
+) -> serde_json::Value {
     let execution_message = BASE64_STANDARD.encode(execution_message.serialize());
     let nonce_account = test.nonce_account.to_string();
     let nonce_authority = nonce_authority.to_string();
-    let authority_address = authority.pubkey().to_string();
-    let authority_file = keypair_file(authority);
-    let output = run_psigner(&[
+    let authority_address = authority.to_string();
+    let mut args = vec![
         "-C",
         &env.config_file_path,
         "--output",
@@ -593,14 +616,10 @@ fn sign(
         nonce_hash,
         "--authority",
         &authority_address,
-        "--signer",
-        authority_file.path().to_str().unwrap(),
         "--quiet",
-        "--yes",
-    ]);
-    let mut entries: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(entries.len(), 1);
-    entries.remove(0)
+    ];
+    args.extend_from_slice(extra);
+    serde_json::from_slice(&run_psigner(&args).stdout).unwrap()
 }
 
 /// Submit an authorization message whose only signer is the given address, with a precomputed
@@ -657,8 +676,8 @@ pub async fn submits_chain_signed_offline_with_next_nonce(env: &TestEnv) {
     assert_failure(
         &submit_signed(
             env,
-            second["address"].as_str().unwrap(),
-            second["signature"].as_str().unwrap(),
+            second["signatures"][0]["address"].as_str().unwrap(),
+            second["signatures"][0]["signature"].as_str().unwrap(),
             second["authorization_message"].as_str().unwrap(),
         ),
         &format!(
@@ -671,8 +690,8 @@ pub async fn submits_chain_signed_offline_with_next_nonce(env: &TestEnv) {
     assert_submitted(
         &submit_signed(
             env,
-            first["address"].as_str().unwrap(),
-            first["signature"].as_str().unwrap(),
+            first["signatures"][0]["address"].as_str().unwrap(),
+            first["signatures"][0]["signature"].as_str().unwrap(),
             first["authorization_message"].as_str().unwrap(),
         ),
         None,
@@ -683,8 +702,8 @@ pub async fn submits_chain_signed_offline_with_next_nonce(env: &TestEnv) {
     assert_submitted(
         &submit_signed(
             env,
-            second["address"].as_str().unwrap(),
-            second["signature"].as_str().unwrap(),
+            second["signatures"][0]["address"].as_str().unwrap(),
+            second["signatures"][0]["signature"].as_str().unwrap(),
             second["authorization_message"].as_str().unwrap(),
         ),
         None,
@@ -863,4 +882,40 @@ pub async fn rejects_durable_nonce_authority_mismatch(env: &TestEnv) {
         ),
     );
     test.assert_received(env, 0).await;
+}
+
+pub async fn submits_unsigned_message_with_external_signature(env: &TestEnv) {
+    let authority = Keypair::new();
+    let signer = programmatic_signer(&authority.pubkey());
+    fund(env, &[signer]).await;
+    let test = SubmitTest::new(env, &signer).await;
+    let execution_message = test.execution_message(&[signer]);
+    let unsigned = run_sign(
+        env,
+        &test,
+        &execution_message,
+        &signer,
+        &test.nonce.to_string(),
+        &authority.pubkey(),
+        &[],
+    );
+    assert_eq!(unsigned["signatures"], serde_json::json!([]));
+    let authorization_message = unsigned["authorization_message"].as_str().unwrap();
+
+    // The external signer, e.g. an HSM, signs the decoded message bytes as-is.
+    let signature = authority.sign_message(&BASE64_STANDARD.decode(authorization_message).unwrap());
+    assert_submitted(
+        &submit_signed(
+            env,
+            &authority.pubkey().to_string(),
+            &signature.to_string(),
+            authorization_message,
+        ),
+        None,
+    );
+    assert_eq!(
+        test.current_nonce(env).await.to_string(),
+        unsigned["next_nonce"].as_str().unwrap()
+    );
+    test.assert_received(env, 1).await;
 }
