@@ -82,7 +82,7 @@ pub(super) struct SubmitCommand {
     #[clap(long, requires = "sign-only")]
     dump_transaction_message: bool,
 
-    /// Hide the signing summary shown when a forwarded signer signs the relay transaction.
+    /// Hide the signing summary shown when the authorization message has forwarded signers.
     /// Confirmation prompts and errors are still shown.
     #[clap(long)]
     quiet: bool,
@@ -272,17 +272,19 @@ pub(super) async fn run(
         })
         .collect::<Result<Vec<_>>>()?;
 
-    if !authorization_signers.is_empty() {
+    // Forwarded signers give the executor their signer privilege, so show the signing
+    // summary for them
+    let forwarded_signers = required_signers
+        .iter()
+        .filter(|address| execute.is_executor_signer(address))
+        .copied()
+        .collect::<Vec<_>>();
+    if !forwarded_signers.is_empty() {
         if !command.quiet {
             // An authority the executor also uses directly is in both lists.
             let pda_authorities = required_signers
                 .iter()
                 .filter(|address| execute.is_pda_authority(address))
-                .copied()
-                .collect::<Vec<_>>();
-            let forwarded_signers = required_signers
-                .iter()
-                .filter(|address| execute.is_executor_signer(address))
                 .copied()
                 .collect::<Vec<_>>();
             eprintln!(
@@ -295,9 +297,10 @@ pub(super) async fn run(
                     &pda_authorities,
                     &forwarded_signers,
                     if command.sign_only {
-                        "Signing returns relay transaction signatures. Nothing is submitted."
+                        "Signs the relay transaction with local signers and prints their \
+                         signatures, and lists signers still missing. Nothing is submitted."
                     } else {
-                        "Signing submits this Execute call immediately."
+                        "Submits this Execute call immediately."
                     },
                 )?
             );

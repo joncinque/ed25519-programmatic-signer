@@ -879,6 +879,79 @@ fn accepts_relay_signatures_online(fee_payer_signature: bool) {
     env.assert_passes_offline_checks(&env.submit_message(&args));
 }
 
+/// With no local relay signers, --sign-only dumps the relay message for airgapped signers to sign,
+/// and their --relay-signature values load up to the nonce account lookup.
+#[test]
+fn sign_only_without_local_signers_supports_airgapped_signers() {
+    let env = SubmitTestEnv::new();
+    let fee_payer = env.fee_payer.pubkey().to_string();
+    let durable_nonce = env.durable_nonce.to_string();
+    let durable_nonce_value = env.durable_nonce_value.to_string();
+    let authority_entry = env.authority_entry();
+    let args = [
+        "--signer",
+        &authority_entry,
+        "--durable-nonce",
+        &durable_nonce,
+        "--blockhash",
+        &durable_nonce_value,
+        "--fee-payer",
+        &fee_payer,
+    ];
+    let output = env.submit_message(
+        &[
+            &args[..],
+            &[
+                "--output",
+                "json",
+                "--sign-only",
+                "--dump-transaction-message",
+            ],
+        ]
+        .concat(),
+    );
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(output.status.success(), "{stderr}");
+    assert!(stderr.contains(&format!(
+        "Forwarded signers (sign at submission):\n  {}",
+        env.ordinary.pubkey()
+    )));
+    assert!(stderr.contains("lists signers still missing. Nothing is submitted."));
+    assert!(!stderr.contains("[y/N]"), "{stderr}");
+    let run: CliSignOnlyData = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(run.signers.is_empty());
+    assert_eq!(
+        run.absent.iter().collect::<BTreeSet<_>>(),
+        BTreeSet::from([&fee_payer, &env.ordinary.pubkey().to_string()])
+    );
+
+    // The airgapped signers sign the decoded relay message as-is.
+    let message_bytes = BASE64_STANDARD.decode(run.message.unwrap()).unwrap();
+    let entry = |signer: &Keypair| {
+        format!(
+            "{}={}",
+            signer.pubkey(),
+            signer.sign_message(&message_bytes)
+        )
+    };
+    let fee_payer_entry = entry(&env.fee_payer);
+    let ordinary_entry = entry(&env.ordinary);
+    env.assert_passes_offline_checks(
+        &env.submit_message(
+            &[
+                &args[..],
+                &[
+                    "--relay-signature",
+                    &fee_payer_entry,
+                    "--relay-signature",
+                    &ordinary_entry,
+                ],
+            ]
+            .concat(),
+        ),
+    );
+}
+
 #[test_case("missing separator", "invalid relay signature: expected ADDRESS=SIGNATURE"; "missing separator")]
 #[test_case("invalid=invalid", "invalid relay signature address"; "invalid address")]
 #[test_case("11111111111111111111111111111111=invalid", "invalid relay signature signature"; "invalid signature")]

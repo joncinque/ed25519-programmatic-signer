@@ -142,15 +142,17 @@ fn submit(env: &TestEnv, message: &VersionedMessage, extra: &[&str], input: &str
     run_psigner_with_input(&args, input)
 }
 
-/// The signing summary shown to local signers on the authorization message.
+/// The signing summary shown when the authorization message has forwarded signers.
 struct Summary<'a> {
     authorities: &'a [Address],
     forwarded_signers: &'a [Address],
+    /// Local signers asked to confirm. Empty when no local signer signs the authorization message,
+    /// so there is no prompt.
     confirmed_by: &'a [Address],
 }
 
-/// Local signers on the authorization message see the signing summary and confirm; a fee payer that
-/// only signs the relay transaction does not.
+/// The signing summary shows when the authorization message has forwarded signers, and local
+/// signers on it confirm.
 fn assert_submitted(output: &Output, summary: Option<Summary>) {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(output.status.success(), "{stderr}");
@@ -196,8 +198,15 @@ fn assert_summary(stderr: &str, summary: &Summary) {
         )),
         "{stderr}"
     );
+    if summary.confirmed_by.is_empty() {
+        assert!(
+            stderr.ends_with("Submits this Execute call immediately.\n"),
+            "{stderr}"
+        );
+        return;
+    }
     assert!(
-        stderr.contains("Signing submits this Execute call immediately."),
+        stderr.contains("Submits this Execute call immediately."),
         "{stderr}"
     );
     let addresses = summary
@@ -869,7 +878,7 @@ pub async fn submits_with_offline_relay_signatures(env: &TestEnv) {
         "--yes",
     ]);
 
-    // No local signer remains, so there is no signing summary.
+    // The forwarded signer still shows the signing summary, but no local signer remains to confirm.
     assert_submitted(
         &submit(
             env,
@@ -890,7 +899,11 @@ pub async fn submits_with_offline_relay_signatures(env: &TestEnv) {
             ],
             "",
         ),
-        None,
+        Some(Summary {
+            authorities: &[authority.pubkey()],
+            forwarded_signers: &[ordinary.pubkey()],
+            confirmed_by: &[],
+        }),
     );
     test.assert_received(env, 2).await;
     assert_ne!(
