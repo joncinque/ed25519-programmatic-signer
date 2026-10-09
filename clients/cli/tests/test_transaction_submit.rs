@@ -123,7 +123,7 @@ impl SubmitTestEnv {
     }
 
     /// Run `--sign-only` with the authority signature and durable nonce, returning the JSON
-    /// output after checking its relay message hash. The RPC endpoint is unreachable, so this
+    /// output after checking its relay message hash and limits. The RPC endpoint is unreachable, so this
     /// also checks no RPC calls are made.
     fn sign_only(&self, extra: &[&str]) -> CliSignOnlyData {
         let authority_entry = self.authority_entry();
@@ -156,6 +156,18 @@ impl SubmitTestEnv {
         assert_eq!(
             json["relayMessageHash"],
             VersionedMessage::hash_raw_message(&message_bytes).to_string()
+        );
+        // The relay transaction is v1, with fixed limits so every run builds the same message.
+        let VersionedMessage::V1(message) =
+            wincode::deserialize_exact::<VersionedMessage>(&message_bytes).unwrap()
+        else {
+            panic!("expected a v1 relay message");
+        };
+        assert_eq!(
+            message.config,
+            v1::TransactionConfig::empty()
+                .with_compute_unit_limit(1_400_000)
+                .with_loaded_accounts_data_size_limit(64 * 1024 * 1024)
         );
         data
     }

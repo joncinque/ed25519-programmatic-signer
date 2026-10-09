@@ -2,6 +2,7 @@ use {
     super::{
         decode::{read_authorization_message, validate_execution_message},
         summary::{confirm_signing, render_signing_summary},
+        v1_transaction::{compile_message, return_signers_data, signer_index, try_partial_sign},
     },
     crate::{cli::keypair_source_parser, client::Client, output::OutputFormat},
     anyhow::{Context, Result, bail, ensure},
@@ -9,15 +10,13 @@ use {
     serde::Serialize,
     solana_address::Address,
     solana_clap_v3_utils::input_parsers::signer::{SignerSource, SignerSourceKind},
-    solana_cli_output::{
-        CliSignOnlyData, ReturnSignersConfig, display::writeln_name_value, return_signers_data,
-    },
+    solana_cli_output::{CliSignOnlyData, display::writeln_name_value},
     solana_hash::Hash,
     solana_message::{VersionedMessage, v1},
     solana_signature::Signature,
     solana_signer::Signer,
     solana_system_interface::instruction::advance_nonce_account,
-    solana_transaction::Transaction,
+    solana_transaction::versioned::VersionedTransaction,
     spl_ed25519_signer_client::ProgrammaticSigner,
     spl_message_executor_interface::instruction::Instruction as ExecutorInstruction,
     std::{collections::BTreeMap, fmt, str::FromStr},
@@ -249,19 +248,19 @@ pub(super) async fn run(
         Some((address, authority)) => vec![advance_nonce_account(&address, &authority), submit],
         None => vec![submit],
     };
-    let mut transaction = Transaction::new_with_payer(&instructions, Some(&fee_payer_address));
-    transaction.message.recent_blockhash = blockhash;
+    let message = compile_message(&fee_payer_address, &instructions, blockhash)?;
+    let mut transaction = VersionedTransaction {
+        signatures: vec![Signature::default(); usize::from(message.header.num_required_signatures)],
+        message: VersionedMessage::V1(message),
+    };
     // Check relay signatures before asking local signers to sign. Each must be for this exact
     // relay transaction, so a mismatch means its run used different arguments.
-    let message_data = transaction.message_data();
+    let message_data = transaction.message.serialize();
     let relay_message_hash = VersionedMessage::hash_raw_message(&message_data);
     let relay_signatures = relay_signatures
         .into_iter()
         .map(|(address, signature)| {
-            let index = transaction.message.account_keys
-                [..usize::from(transaction.message.header.num_required_signatures)]
-                .iter()
-                .position(|key| key == &address)
+            let index = signer_index(&transaction, &address)
                 .with_context(|| format!("{address} is not a relay transaction signer"))?;
             ensure!(
                 signature.verify(address.as_ref(), &message_data),
@@ -314,30 +313,34 @@ pub(super) async fn run(
         .chain(relay_only_signers.iter().map(|(_, signer)| signer.as_ref()))
         .collect::<Vec<_>>();
 
-    // Fill the slots of signers that signed in a separate run. The relay transaction already has
-    // its blockhash, so signing below keeps them.
+    // Fill the slots of signers that signed in a separate run.
     for (index, signature) in relay_signatures {
         transaction.signatures[index] = signature;
     }
+    try_partial_sign(&mut transaction, &relay_signers, &message_data)
+        .context("failed to sign relay transaction")?;
     if command.sign_only {
         // Signers given as an address stay absent for another run to provide.
-        transaction
-            .try_partial_sign(&relay_signers, blockhash)
-            .context("failed to sign relay transaction")?;
         return output.render(&SignOnlyOutput {
             relay_message_hash: relay_message_hash.to_string(),
             data: return_signers_data(
                 &transaction,
-                &ReturnSignersConfig {
-                    dump_transaction_message: command.dump_transaction_message,
-                },
+                &message_data,
+                command.dump_transaction_message,
             ),
         });
     }
     // Every signature must be present before submitting.
-    transaction
-        .try_sign(&relay_signers, blockhash)
-        .context("failed to sign relay transaction")?;
+    if let Some(index) = transaction
+        .verify_with_results()
+        .iter()
+        .position(|valid| !valid)
+    {
+        bail!(
+            "relay transaction is missing a valid signature for {}",
+            transaction.message.static_account_keys()[index]
+        );
+    }
     let signature = client
         .send_and_confirm_transaction(&transaction)
         .await

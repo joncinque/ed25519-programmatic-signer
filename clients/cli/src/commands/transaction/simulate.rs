@@ -1,5 +1,5 @@
 use {
-    super::decode::read_execution_message,
+    super::{decode::read_execution_message, v1_transaction::compile_message},
     crate::{client::Client, output::OutputFormat},
     anyhow::{Context, Result, bail, ensure},
     clap::Args,
@@ -8,15 +8,16 @@ use {
     solana_account_decoder_client_types::token::real_number_string_trimmed,
     solana_address::Address,
     solana_hash::Hash,
-    solana_message::legacy::Message,
+    solana_message::{VersionedMessage, v1},
     solana_native_token::Sol,
     solana_rpc_client_types::response::{RpcSimulateTransactionResult, UiTokenAmount},
-    solana_transaction::Transaction,
+    solana_signature::Signature,
+    solana_transaction::versioned::VersionedTransaction,
     solana_transaction_status::UiTransactionTokenBalance,
     spl_ed25519_signer_client::ProgrammaticSigner,
     spl_message_executor_client::instruction::execute,
     std::{
-        collections::{BTreeMap, BTreeSet, HashSet},
+        collections::{BTreeMap, HashSet},
         fmt,
     },
 };
@@ -78,23 +79,15 @@ pub(super) async fn run(
     // signer the Execute instruction marks is a signer when it runs. Calling the executor
     // directly with those signers mirrors that, without the authority signatures Submit checks.
     let instruction = execute(&command.nonce_account, &nonce_authority, &execution_message);
-    // Compiling the message panics on more than 256 account keys.
-    let account_count = instruction
-        .accounts
-        .iter()
-        .map(|meta| meta.pubkey)
-        .chain([instruction.program_id, fee_payer])
-        .collect::<BTreeSet<_>>()
-        .len();
-    ensure!(
-        account_count <= 256,
-        "too many accounts for the simulated message"
-    );
-    let transaction = Transaction::new_unsigned(Message::new(&[instruction], Some(&fee_payer)));
+    // Simulate replaces the blockhash.
+    let message = compile_message(&fee_payer, &[instruction], Hash::default())?;
+    // Signatures are not verified.
+    let transaction = VersionedTransaction {
+        signatures: vec![Signature::default(); usize::from(message.header.num_required_signatures)],
+        message: VersionedMessage::V1(message.clone()),
+    };
 
-    let verbose_accounts = command
-        .verbose
-        .then(|| writable_accounts(&transaction.message));
+    let verbose_accounts = command.verbose.then(|| writable_accounts(&message));
     let result = client
         .simulate_transaction(&transaction, verbose_accounts.as_deref())
         .await?;
@@ -121,13 +114,13 @@ pub(super) async fn run(
 
     output.render(&SimulateOutput {
         units_consumed: result.units_consumed,
-        sol_balance_changes: sol_balance_changes(&transaction.message, &result, fee, &authorities)?,
-        token_balance_changes: token_balance_changes(&transaction.message, &result, &authorities)?,
+        sol_balance_changes: sol_balance_changes(&message, &result, fee, &authorities)?,
+        token_balance_changes: token_balance_changes(&message, &result, &authorities)?,
     })
 }
 
 /// Accounts the message may write to.
-fn writable_accounts(message: &Message) -> Vec<Address> {
+fn writable_accounts(message: &v1::Message) -> Vec<Address> {
     message
         .account_keys
         .iter()
@@ -160,7 +153,7 @@ fn verbose_result(result: &RpcSimulateTransactionResult, addresses: &[Address]) 
 /// Lamport changes per account. The simulation fee is added back to the fee payer, since the
 /// relay transaction pays its own fee. `authorities` maps PDA signers to their authorities.
 fn sol_balance_changes(
-    message: &Message,
+    message: &v1::Message,
     result: &RpcSimulateTransactionResult,
     fee: u64,
     authorities: &BTreeMap<String, String>,
@@ -198,7 +191,7 @@ fn sol_balance_changes(
 /// closed, so its amount there is zero. `authorities` maps PDA signers to their authorities,
 /// matched against the token account owner.
 fn token_balance_changes(
-    message: &Message,
+    message: &v1::Message,
     result: &RpcSimulateTransactionResult,
     authorities: &BTreeMap<String, String>,
 ) -> Result<Vec<TokenBalanceChange>> {

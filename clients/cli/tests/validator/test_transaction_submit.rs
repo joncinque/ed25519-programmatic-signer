@@ -726,12 +726,10 @@ pub async fn submits_with_durable_nonce(env: &TestEnv) {
     let authority = Keypair::new();
     let signer = programmatic_signer(&authority.pubkey());
     let ordinary = Keypair::new();
+    let durable_nonce_authority = Keypair::new();
     fund(env, &[signer, ordinary.pubkey()]).await;
     let test = SubmitTest::new(env, &signer).await;
-    // The forwarded signer also authorizes the durable nonce. A separate durable nonce authority
-    // would push this relay transaction over the transaction size limit.
-    // TODO: Test a separate durable nonce authority once the relay transaction is v1
-    let durable_nonce = create_durable_nonce(env, &ordinary.pubkey()).await;
+    let durable_nonce = create_durable_nonce(env, &durable_nonce_authority.pubkey()).await;
     let value = durable_nonce_value(env, &durable_nonce).await;
     let message = build_authorization_message(
         &test.execution_message(&[signer, ordinary.pubkey()]),
@@ -741,6 +739,7 @@ pub async fn submits_with_durable_nonce(env: &TestEnv) {
     );
     let ordinary_file = keypair_file(&ordinary);
     let ordinary_path = ordinary_file.path().to_str().unwrap();
+    let durable_nonce_authority_file = keypair_file(&durable_nonce_authority);
 
     assert_submitted(
         &submit(
@@ -754,7 +753,7 @@ pub async fn submits_with_durable_nonce(env: &TestEnv) {
                 "--durable-nonce",
                 &durable_nonce.to_string(),
                 "--durable-nonce-authority",
-                ordinary_path,
+                durable_nonce_authority_file.path().to_str().unwrap(),
                 "--blockhash",
                 &value.to_string(),
             ],

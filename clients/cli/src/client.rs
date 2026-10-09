@@ -26,7 +26,7 @@ use {
         response::RpcSimulateTransactionResult,
     },
     solana_signer::Signer,
-    solana_transaction::Transaction,
+    solana_transaction::versioned::VersionedTransaction,
     spl_nonce_interface::state::Nonce,
     std::{cell::RefCell, io::ErrorKind, path::Path, rc::Rc, str::FromStr},
 };
@@ -158,7 +158,7 @@ impl Client {
     /// those accounts.
     pub(crate) async fn simulate_transaction(
         &self,
-        transaction: &Transaction,
+        transaction: &VersionedTransaction,
         verbose_accounts: Option<&[Address]>,
     ) -> Result<RpcSimulateTransactionResult> {
         let accounts = verbose_accounts.map(|addresses| RpcSimulateTransactionAccountsConfig {
@@ -184,7 +184,7 @@ impl Client {
 
     pub(crate) async fn send_and_confirm_transaction(
         &self,
-        transaction: &Transaction,
+        transaction: &VersionedTransaction,
     ) -> Result<String> {
         self.rpc
             .send_and_confirm_transaction_with_config(

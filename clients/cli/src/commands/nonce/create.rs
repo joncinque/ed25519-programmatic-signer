@@ -82,7 +82,9 @@ pub(super) async fn run(
     transaction
         .try_sign(signers.as_slice(), recent_blockhash)
         .context("failed to sign nonce-account creation")?;
-    let signature = client.send_and_confirm_transaction(&transaction).await?;
+    let signature = client
+        .send_and_confirm_transaction(&transaction.into())
+        .await?;
 
     let account = client
         .nonce_account(&nonce_account)
