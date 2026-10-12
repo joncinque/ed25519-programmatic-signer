@@ -49,7 +49,8 @@ pub(super) struct SignCommand {
 
     /// Signer source: a keypair file, usb:// URL, prompt:// URL, or the ASK keyword.
     /// Repeat to sign with multiple local keys. Each must be in --authority.
-    /// Defaults to the configured keypair.
+    /// Omit to print the authorization message without signing it, for authorities that sign it
+    /// externally, such as a custody system or HSM.
     #[clap(long, value_parser = keypair_source_parser())]
     signer: Vec<SignerSource>,
 
@@ -135,15 +136,11 @@ pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -
     let encoded_authorization_message = BASE64_STANDARD.encode(authorization_message.serialize());
     let next_nonce = next_nonce(&command.nonce_account, &execution_message).to_string();
 
-    let signers = if command.signer.is_empty() {
-        vec![client.load_signer(&client.config_keypair_source()?, "message authority", false)?]
-    } else {
-        command
-            .signer
-            .iter()
-            .map(|source| client.load_signer(source, "message authority", false))
-            .collect::<Result<Vec<_>>>()?
-    };
+    let signers = command
+        .signer
+        .iter()
+        .map(|source| client.load_signer(source, "message authority", false))
+        .collect::<Result<Vec<_>>>()?;
     let mut unique_signers = Vec::new();
     for signer in signers {
         let address = signer.try_pubkey()?;
@@ -169,67 +166,66 @@ pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -
                 &command.nonce_authority,
                 &authorities,
                 &forwarded_signers,
-                "Signing returns addresses, signatures, forwarded signers, the next nonce value, \
-                 and the base64 authorization message. Nothing is submitted.",
+                if unique_signers.is_empty() {
+                    "Returns forwarded signers, the next nonce value, and the base64 authorization \
+                     message for external signers. Nothing is signed or submitted."
+                } else {
+                    "Signing returns addresses, signatures, forwarded signers, the next nonce \
+                     value, and the base64 authorization message. Nothing is submitted."
+                },
             )?
         );
     }
     confirm_signing(&unique_signers, command.yes)?;
-    let mut entries = Vec::new();
-    for (authority, signature) in
-        sign_authorization_message(&authorization_message, &unique_signers)?
-    {
-        entries.push(SignOutput {
+    let signatures = sign_authorization_message(&authorization_message, &unique_signers)?
+        .into_iter()
+        .map(|(authority, signature)| AuthoritySignature {
             address: authority.to_string(),
             signature: signature.to_string(),
-            forwarded_signers: forwarded_signers.iter().map(ToString::to_string).collect(),
-            next_nonce: next_nonce.clone(),
-            authorization_message: encoded_authorization_message.clone(),
-        });
-    }
-    output.render(&SignOutputs(entries))
+        })
+        .collect();
+    output.render(&SignOutput {
+        authorization_message: encoded_authorization_message,
+        next_nonce,
+        forwarded_signers: forwarded_signers.iter().map(ToString::to_string).collect(),
+        signatures,
+    })
 }
 
 #[derive(Serialize)]
 struct SignOutput {
-    address: String,
-    signature: String,
-    forwarded_signers: Vec<String>,
-    next_nonce: String,
     authorization_message: String,
+    next_nonce: String,
+    forwarded_signers: Vec<String>,
+    signatures: Vec<AuthoritySignature>,
 }
 
 #[derive(Serialize)]
-#[serde(transparent)]
-struct SignOutputs(Vec<SignOutput>);
+struct AuthoritySignature {
+    address: String,
+    signature: String,
+}
 
-impl fmt::Display for SignOutputs {
+impl fmt::Display for SignOutput {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for entry in &self.0 {
+        for entry in &self.signatures {
             writeln!(f, "Address: {}", entry.address)?;
             writeln!(f, "Signature: {}", entry.signature)?;
             writeln!(f)?;
         }
-        if let Some(entry) = self.0.first() {
-            if !entry.forwarded_signers.is_empty() {
-                writeln!(f, "Forwarded signers (sign at submission):")?;
-                for address in &entry.forwarded_signers {
-                    writeln!(f, "  {address}")?;
-                }
-                writeln!(f)?;
+        if !self.forwarded_signers.is_empty() {
+            writeln!(f, "Forwarded signers (sign at submission):")?;
+            for address in &self.forwarded_signers {
+                writeln!(f, "  {address}")?;
             }
-            writeln!(
-                f,
-                "Next nonce value (after execution): {}",
-                entry.next_nonce
-            )?;
             writeln!(f)?;
-            write!(
-                f,
-                "Authorization message (base64):\n{}",
-                entry.authorization_message
-            )?;
         }
-        Ok(())
+        writeln!(f, "Next nonce value (after execution): {}", self.next_nonce)?;
+        writeln!(f)?;
+        write!(
+            f,
+            "Authorization message (base64):\n{}",
+            self.authorization_message
+        )
     }
 }
