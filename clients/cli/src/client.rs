@@ -1,17 +1,21 @@
 use {
     crate::cli::ClientArgs,
-    anyhow::{Context, Result, anyhow, bail},
+    anyhow::{Context, Result, anyhow, bail, ensure},
     clap::ArgMatches,
     solana_account::Account,
     solana_account_decoder_client_types::UiAccountEncoding,
     solana_address::Address,
     solana_clap_v3_utils::{
         input_parsers::{parse_url_or_moniker, signer::SignerSource},
-        keypair::signer_from_source,
+        keypair::{SignerFromPathConfig, signer_from_source_with_config},
     },
     solana_cli_config::{CONFIG_FILE, Config as SolanaCliConfig},
     solana_commitment_config::CommitmentConfig,
     solana_hash::Hash,
+    solana_nonce::{
+        state::{Data, State},
+        versions::Versions,
+    },
     solana_remote_wallet::remote_wallet::RemoteWalletManager,
     solana_rpc_client::nonblocking::rpc_client::RpcClient,
     solana_rpc_client_types::{
@@ -73,30 +77,43 @@ impl Client {
     }
 
     pub(crate) fn fee_payer(&self) -> Result<Box<dyn Signer>> {
-        self.load_signer_or_config_default(self.fee_payer.as_ref(), "fee payer")
+        self.load_signer(&self.fee_payer_source()?, "fee payer", false)
     }
 
-    pub(crate) fn load_signer_or_config_default(
+    /// The `--fee-payer` source, or the configured keypair.
+    pub(crate) fn fee_payer_source(&self) -> Result<SignerSource> {
+        self.fee_payer
+            .clone()
+            .map_or_else(|| self.config_keypair_source(), Ok)
+    }
+
+    /// Load a signer. With `allow_null_signer`, an address source loads a [`NullSigner`] whose
+    /// signature is collected separately.
+    ///
+    /// [`NullSigner`]: solana_signer::null_signer::NullSigner
+    pub(crate) fn load_signer(
         &self,
-        source: Option<&SignerSource>,
+        source: &SignerSource,
         name: &str,
+        allow_null_signer: bool,
     ) -> Result<Box<dyn Signer>> {
-        match source {
-            Some(source) => self.load_signer(source, name),
-            None => {
-                let config_keypair_source = SignerSource::parse(&self.config_keypair_path)
-                    .map_err(|error| anyhow!(error.to_string()))
-                    .with_context(|| format!("invalid {name} signer source"))?;
-                self.load_signer(&config_keypair_source, name)
-            }
-        }
+        let mut wallet_manager = self.wallet_manager.borrow_mut();
+        signer_from_source_with_config(
+            &self.matches,
+            source,
+            name,
+            &mut wallet_manager,
+            &SignerFromPathConfig { allow_null_signer },
+        )
+        .map_err(|error| anyhow!(error.to_string()))
+        .with_context(|| format!("failed to load {name}"))
     }
 
-    pub(crate) fn load_signer(&self, source: &SignerSource, name: &str) -> Result<Box<dyn Signer>> {
-        let mut wallet_manager = self.wallet_manager.borrow_mut();
-        signer_from_source(&self.matches, source, name, &mut wallet_manager)
+    /// The keypair from the Solana CLI configuration.
+    pub(crate) fn config_keypair_source(&self) -> Result<SignerSource> {
+        SignerSource::parse(&self.config_keypair_path)
             .map_err(|error| anyhow!(error.to_string()))
-            .with_context(|| format!("failed to load {name}"))
+            .context("invalid configured keypair path")
     }
 
     pub(crate) async fn minimum_balance_for_rent_exemption(&self, data_len: usize) -> Result<u64> {
@@ -122,6 +139,18 @@ impl Client {
             .value
             .with_context(|| format!("nonce account {address} was not found"))?;
         decode_nonce_account(address, account)
+    }
+
+    /// Fetch a System Program nonce account, used as a relay transaction's durable nonce.
+    pub(crate) async fn durable_nonce_account(&self, address: &Address) -> Result<Data> {
+        let account = self
+            .rpc
+            .get_account_with_commitment(address, self.rpc.commitment())
+            .await
+            .with_context(|| format!("failed to fetch account {address}"))?
+            .value
+            .with_context(|| format!("durable nonce account {address} was not found"))?;
+        decode_durable_nonce_account(address, &account)
     }
 
     /// Simulate without verifying signatures, against the latest blockhash. With
@@ -188,6 +217,20 @@ fn decode_nonce_account(address: &Address, account: Account) -> Result<NonceAcco
         state,
         lamports: account.lamports,
     })
+}
+
+fn decode_durable_nonce_account(address: &Address, account: &Account) -> Result<Data> {
+    ensure!(
+        account.owner == solana_system_interface::program::id(),
+        "account {address} is owned by {}, not the System Program",
+        account.owner
+    );
+    let versions = wincode::deserialize::<Versions>(&account.data)
+        .with_context(|| format!("account {address} is not a durable nonce account"))?;
+    let State::Initialized(data) = versions.state() else {
+        bail!("durable nonce account {address} is not initialized");
+    };
+    Ok(data.clone())
 }
 
 fn load_cli_config(config_path: Option<&Path>) -> Result<SolanaCliConfig> {

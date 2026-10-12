@@ -8,8 +8,9 @@ use {
     solana_hash::Hash,
     solana_keypair::{Keypair, write_keypair_file},
     solana_message::{VersionedMessage, v1},
+    solana_nonce::{state::State, versions::Versions},
     solana_signer::Signer,
-    solana_system_interface::instruction::transfer,
+    solana_system_interface::instruction::{create_nonce_account, transfer},
     solana_transaction::Transaction,
     spl_nonce_interface::state::Nonce,
     spl_programmatic_signer_cli::NonceCreateOutput,
@@ -88,6 +89,36 @@ pub(crate) async fn fund(env: &TestEnv, addresses: &[Address]) {
         .send_and_confirm_transaction(&transaction)
         .await
         .unwrap();
+}
+
+/// Create a System Program nonce account for the relay transaction's durable nonce.
+async fn create_durable_nonce(env: &TestEnv, authority: &Address) -> Address {
+    let nonce = Keypair::new();
+    let lamports = env
+        .rpc
+        .get_minimum_balance_for_rent_exemption(State::size())
+        .await
+        .unwrap();
+    let transaction = Transaction::new_signed_with_payer(
+        &create_nonce_account(&env.payer.pubkey(), &nonce.pubkey(), authority, lamports),
+        Some(&env.payer.pubkey()),
+        &[&env.payer, &nonce],
+        env.rpc.get_latest_blockhash().await.unwrap(),
+    );
+    env.rpc
+        .send_and_confirm_transaction(&transaction)
+        .await
+        .unwrap();
+    nonce.pubkey()
+}
+
+async fn durable_nonce_value(env: &TestEnv, address: &Address) -> Hash {
+    let account = env.rpc.get_account(address).await.unwrap();
+    let versions = wincode::deserialize::<Versions>(&account.data).unwrap();
+    let State::Initialized(data) = versions.state() else {
+        panic!("durable nonce account {address} is not initialized");
+    };
+    data.blockhash()
 }
 
 fn keypair_file(keypair: &Keypair) -> NamedTempFile {
@@ -660,4 +691,176 @@ pub async fn submits_chain_signed_offline_with_next_nonce(env: &TestEnv) {
     );
     assert_eq!(test.current_nonce(env).await.to_string(), second_next);
     test.assert_received(env, 2).await;
+}
+
+pub async fn submits_with_durable_nonce(env: &TestEnv) {
+    let authority = Keypair::new();
+    let signer = programmatic_signer(&authority.pubkey());
+    let ordinary = Keypair::new();
+    fund(env, &[signer, ordinary.pubkey()]).await;
+    let test = SubmitTest::new(env, &signer).await;
+    // The forwarded signer also authorizes the durable nonce. A separate durable nonce authority
+    // would push this relay transaction over the transaction size limit.
+    // TODO: Test a separate durable nonce authority once the relay transaction is v1
+    let durable_nonce = create_durable_nonce(env, &ordinary.pubkey()).await;
+    let value = durable_nonce_value(env, &durable_nonce).await;
+    let message = build_authorization_message(
+        &test.execution_message(&[signer, ordinary.pubkey()]),
+        &test.nonce_account,
+        &signer,
+        &[authority.pubkey()],
+    );
+    let ordinary_file = keypair_file(&ordinary);
+    let ordinary_path = ordinary_file.path().to_str().unwrap();
+
+    assert_submitted(
+        &submit(
+            env,
+            &message,
+            &[
+                "--signer",
+                &signature_entry(&authority, &message),
+                "--relay-signer",
+                ordinary_path,
+                "--durable-nonce",
+                &durable_nonce.to_string(),
+                "--durable-nonce-authority",
+                ordinary_path,
+                "--blockhash",
+                &value.to_string(),
+            ],
+            "y",
+        ),
+        Some(Summary {
+            authorities: &[authority.pubkey()],
+            forwarded_signers: &[ordinary.pubkey()],
+            confirmed_by: &[ordinary.pubkey()],
+        }),
+    );
+    test.assert_received(env, 2).await;
+    // The relay transaction advanced its durable nonce.
+    assert_ne!(durable_nonce_value(env, &durable_nonce).await, value);
+}
+
+pub async fn submits_with_blockhash(env: &TestEnv) {
+    let authority = Keypair::new();
+    let signer = programmatic_signer(&authority.pubkey());
+    fund(env, &[signer]).await;
+    let test = SubmitTest::new(env, &signer).await;
+    let blockhash = env.rpc.get_latest_blockhash().await.unwrap();
+    let message = build_authorization_message(
+        &test.execution_message(&[signer]),
+        &test.nonce_account,
+        &signer,
+        &[authority.pubkey()],
+    );
+    let authority_entry = signature_entry(&authority, &message);
+
+    // An unknown blockhash is used as given rather than replaced with the latest.
+    assert_failure(
+        &submit(
+            env,
+            &message,
+            &[
+                "--signer",
+                &authority_entry,
+                "--blockhash",
+                &Hash::new_unique().to_string(),
+            ],
+            "",
+        ),
+        "Blockhash not found",
+    );
+    test.assert_received(env, 0).await;
+
+    assert_submitted(
+        &submit(
+            env,
+            &message,
+            &[
+                "--signer",
+                &authority_entry,
+                "--blockhash",
+                &blockhash.to_string(),
+            ],
+            "",
+        ),
+        None,
+    );
+    test.assert_received(env, 1).await;
+}
+
+pub async fn rejects_stale_durable_nonce_value(env: &TestEnv) {
+    let authority = Keypair::new();
+    let signer = programmatic_signer(&authority.pubkey());
+    fund(env, &[signer]).await;
+    let test = SubmitTest::new(env, &signer).await;
+    // The durable nonce authority defaults to the fee payer.
+    let durable_nonce = create_durable_nonce(env, &env.payer.pubkey()).await;
+    let value = durable_nonce_value(env, &durable_nonce).await;
+    let stale = Hash::new_unique();
+    let message = build_authorization_message(
+        &test.execution_message(&[signer]),
+        &test.nonce_account,
+        &signer,
+        &[authority.pubkey()],
+    );
+
+    assert_failure(
+        &submit(
+            env,
+            &message,
+            &[
+                "--signer",
+                &signature_entry(&authority, &message),
+                "--durable-nonce",
+                &durable_nonce.to_string(),
+                "--blockhash",
+                &stale.to_string(),
+            ],
+            "",
+        ),
+        &format!(
+            "relay transaction uses durable nonce value {stale}, but durable nonce account \
+             {durable_nonce} currently has {value}"
+        ),
+    );
+    test.assert_received(env, 0).await;
+}
+
+pub async fn rejects_durable_nonce_authority_mismatch(env: &TestEnv) {
+    let authority = Keypair::new();
+    let signer = programmatic_signer(&authority.pubkey());
+    let durable_nonce_authority = Keypair::new();
+    fund(env, &[signer]).await;
+    let test = SubmitTest::new(env, &signer).await;
+    let durable_nonce = create_durable_nonce(env, &durable_nonce_authority.pubkey()).await;
+    let message = build_authorization_message(
+        &test.execution_message(&[signer]),
+        &test.nonce_account,
+        &signer,
+        &[authority.pubkey()],
+    );
+
+    // Without --durable-nonce-authority, the fee payer is assumed to be the authority.
+    assert_failure(
+        &submit(
+            env,
+            &message,
+            &[
+                "--signer",
+                &signature_entry(&authority, &message),
+                "--durable-nonce",
+                &durable_nonce.to_string(),
+            ],
+            "",
+        ),
+        &format!(
+            "relay transaction uses durable nonce authority {}, but durable nonce account \
+             {durable_nonce} has authority {}",
+            env.payer.pubkey(),
+            durable_nonce_authority.pubkey()
+        ),
+    );
+    test.assert_received(env, 0).await;
 }

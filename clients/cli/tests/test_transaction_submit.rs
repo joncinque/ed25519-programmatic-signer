@@ -3,18 +3,21 @@ use {
         execute::{build_authorization_message, encode, programmatic_signer, signature_entry},
         helpers::run_psigner_with_input,
     },
+    base64::{Engine, prelude::BASE64_STANDARD},
     solana_address::Address,
     solana_cli_config::Config as SolanaConfig,
+    solana_cli_output::CliSignOnlyData,
     solana_hash::Hash,
     solana_instruction::{AccountMeta, Instruction},
     solana_keypair::{Keypair, write_keypair_file},
     solana_message::{VersionedMessage, legacy, v1},
+    solana_signature::Signature,
     solana_signer::Signer,
     solana_system_interface::instruction::transfer,
     spl_ed25519_signer_client::message::authorization_message,
     spl_message_executor_client::instruction::execute,
     spl_message_executor_interface::instruction::Instruction as ExecutorInstruction,
-    std::{path::PathBuf, process::Output},
+    std::{collections::BTreeSet, path::PathBuf, process::Output},
     tempfile::TempDir,
     test_case::test_case,
 };
@@ -26,10 +29,13 @@ pub mod common;
 struct SubmitTestEnv {
     directory: TempDir,
     config_file_path: String,
+    fee_payer: Keypair,
     authority: Keypair,
     ordinary: Keypair,
     nonce_account: Address,
     message: VersionedMessage,
+    durable_nonce: Address,
+    durable_nonce_value: Hash,
 }
 
 impl SubmitTestEnv {
@@ -76,10 +82,13 @@ impl SubmitTestEnv {
         Self {
             directory,
             config_file_path,
+            fee_payer,
             authority,
             ordinary,
             nonce_account,
             message,
+            durable_nonce: Address::new_unique(),
+            durable_nonce_value: Hash::new_unique(),
         }
     }
 
@@ -111,6 +120,34 @@ impl SubmitTestEnv {
 
     fn submit_message(&self, extra: &[&str]) -> Output {
         self.submit(&encode(&self.message), extra)
+    }
+
+    /// Run `--sign-only` with the authority signature and durable nonce, returning the JSON
+    /// output. The RPC endpoint is unreachable, so this also checks no RPC calls are made.
+    fn sign_only(&self, extra: &[&str]) -> CliSignOnlyData {
+        let authority_entry = self.authority_entry();
+        let durable_nonce = self.durable_nonce.to_string();
+        let durable_nonce_value = self.durable_nonce_value.to_string();
+        let mut args = vec![
+            "--output",
+            "json",
+            "--signer",
+            &authority_entry,
+            "--durable-nonce",
+            &durable_nonce,
+            "--blockhash",
+            &durable_nonce_value,
+            "--sign-only",
+            "--dump-transaction-message",
+        ];
+        args.extend_from_slice(extra);
+        let output = self.submit_message(&args);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice(&output.stdout).unwrap()
     }
 
     /// Valid input fails only when the command reaches the unreachable RPC endpoint.
@@ -509,4 +546,251 @@ fn rejects_message_signer_unused_by_execute() {
         ),
         &format!("{unused} is neither a PDA authority nor a signer the executor uses"),
     );
+}
+
+/// The relay signers each sign in a separate --sign-only run, naming the others by address. Every
+/// run must sign the same message.
+#[test]
+fn sign_only_runs_sign_the_same_relay_message() {
+    let env = SubmitTestEnv::new();
+    let fee_payer = env.fee_payer.pubkey().to_string();
+    let nonce_authority = Keypair::new();
+    let nonce_authority_address = nonce_authority.pubkey().to_string();
+    let nonce_authority_file = env.keypair_file(&nonce_authority);
+    let ordinary_file = env.keypair_file(&env.ordinary);
+    let runs = [
+        (
+            env.sign_only(&[
+                "--fee-payer",
+                &env.keypair_file(&env.fee_payer),
+                "--durable-nonce-authority",
+                &nonce_authority_address,
+            ]),
+            env.fee_payer.pubkey(),
+        ),
+        (
+            env.sign_only(&[
+                "--fee-payer",
+                &fee_payer,
+                "--durable-nonce-authority",
+                &nonce_authority_file,
+            ]),
+            nonce_authority.pubkey(),
+        ),
+        (
+            env.sign_only(&[
+                "--fee-payer",
+                &fee_payer,
+                "--durable-nonce-authority",
+                &nonce_authority_address,
+                "--relay-signer",
+                &ordinary_file,
+                "--yes",
+            ]),
+            env.ordinary.pubkey(),
+        ),
+    ];
+
+    let message = runs[0].0.message.clone().unwrap();
+    let message_bytes = BASE64_STANDARD.decode(&message).unwrap();
+    let relay_signers = BTreeSet::from([
+        env.fee_payer.pubkey(),
+        nonce_authority.pubkey(),
+        env.ordinary.pubkey(),
+    ]);
+    for (run, signer) in &runs {
+        assert_eq!(run.message.as_ref(), Some(&message));
+        assert_eq!(run.blockhash, env.durable_nonce_value.to_string());
+        let [entry] = run.signers.as_slice() else {
+            panic!("expected one signature, got {:?}", run.signers);
+        };
+        let (address, signature) = entry.split_once('=').unwrap();
+        assert_eq!(address, signer.to_string());
+        assert!(
+            signature
+                .parse::<Signature>()
+                .unwrap()
+                .verify(signer.as_ref(), &message_bytes)
+        );
+        let absent = run
+            .absent
+            .iter()
+            .map(|address| address.parse().unwrap())
+            .collect::<BTreeSet<Address>>();
+        let mut expected_absent = relay_signers.clone();
+        expected_absent.remove(signer);
+        assert_eq!(absent, expected_absent);
+        assert!(run.bad_sig.is_empty());
+    }
+}
+
+#[test]
+fn sign_only_defaults_durable_nonce_authority_to_fee_payer() {
+    let env = SubmitTestEnv::new();
+    let run = env.sign_only(&["--fee-payer", &env.keypair_file(&env.fee_payer)]);
+    assert_eq!(
+        run.signers,
+        [format!(
+            "{}={}",
+            env.fee_payer.pubkey(),
+            env.fee_payer.sign_message(
+                &BASE64_STANDARD
+                    .decode(run.message.as_ref().unwrap())
+                    .unwrap()
+            )
+        )]
+    );
+    assert_eq!(run.absent, [env.ordinary.pubkey().to_string()]);
+}
+
+/// Without a durable nonce, the relay transaction uses the given blockhash as its lifetime.
+#[test]
+fn sign_only_with_blockhash() {
+    let env = SubmitTestEnv::new();
+    let blockhash = Hash::new_unique();
+    let output = env.submit_message(&[
+        "--output",
+        "json",
+        "--signer",
+        &env.authority_entry(),
+        "--fee-payer",
+        &env.keypair_file(&env.fee_payer),
+        "--blockhash",
+        &blockhash.to_string(),
+        "--sign-only",
+        "--dump-transaction-message",
+    ]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let run: CliSignOnlyData = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(run.blockhash, blockhash.to_string());
+    let message_bytes = BASE64_STANDARD.decode(run.message.unwrap()).unwrap();
+    assert_eq!(
+        run.signers,
+        [format!(
+            "{}={}",
+            env.fee_payer.pubkey(),
+            env.fee_payer.sign_message(&message_bytes)
+        )]
+    );
+    assert_eq!(run.absent, [env.ordinary.pubkey().to_string()]);
+}
+
+#[test]
+fn sign_only_requires_authority_signatures() {
+    let env = SubmitTestEnv::new();
+    assert_failure(
+        &env.submit_message(&[
+            "--fee-payer",
+            &env.keypair_file(&env.fee_payer),
+            "--durable-nonce",
+            &env.durable_nonce.to_string(),
+            "--blockhash",
+            &env.durable_nonce_value.to_string(),
+            "--sign-only",
+        ]),
+        &format!(
+            "missing signature for authority {}, authorities sign with `transaction sign`",
+            env.authority.pubkey()
+        ),
+    );
+}
+
+#[test]
+fn sign_only_defaults_fee_payer_to_configured_keypair() {
+    let env = SubmitTestEnv::new();
+    let run = env.sign_only(&[]);
+    assert_eq!(
+        run.signers,
+        [format!(
+            "{}={}",
+            env.fee_payer.pubkey(),
+            env.fee_payer.sign_message(
+                &BASE64_STANDARD
+                    .decode(run.message.as_ref().unwrap())
+                    .unwrap()
+            )
+        )]
+    );
+    assert_eq!(run.absent, [env.ordinary.pubkey().to_string()]);
+}
+
+#[test]
+fn accepts_durable_nonce_online() {
+    let env = SubmitTestEnv::new();
+    let nonce_authority = Keypair::new();
+    let output = env.submit_message(&[
+        "--signer",
+        &env.authority_entry(),
+        "--relay-signer",
+        &env.keypair_file(&env.ordinary),
+        "--durable-nonce",
+        &env.durable_nonce.to_string(),
+        "--durable-nonce-authority",
+        &env.keypair_file(&nonce_authority),
+    ]);
+    env.assert_passes_offline_checks(&output);
+}
+
+#[test_case(&["--fee-payer", "{}"]; "fee payer")]
+#[test_case(&["--durable-nonce", "{}", "--durable-nonce-authority", "{}"]; "durable nonce authority")]
+fn rejects_address_signer_without_sign_only(args: &[&str]) {
+    let env = SubmitTestEnv::new();
+    let address = Address::new_unique().to_string();
+    let mut args = args
+        .iter()
+        .map(|arg| arg.replace("{}", &address))
+        .collect::<Vec<_>>();
+    args.extend([
+        "--signer".to_string(),
+        env.authority_entry(),
+        "--relay-signer".to_string(),
+        env.keypair_file(&env.ordinary),
+    ]);
+    assert_failure(
+        &env.submit_message(&args.iter().map(String::as_str).collect::<Vec<_>>()),
+        &format!("missing signature for supplied pubkey: {address}"),
+    );
+}
+
+#[test_case(&["--sign-only"], "--blockhash <HASH>"; "sign only without blockhash")]
+#[test_case(&["--dump-transaction-message"], "--sign-only"; "dump without sign only")]
+#[test_case(&["--durable-nonce-authority", "{}"], "--durable-nonce <ADDRESS>"; "durable nonce authority without durable nonce")]
+fn rejects_missing_required_args(args: &[&str], expected: &str) {
+    let env = SubmitTestEnv::new();
+    let address = Address::new_unique().to_string();
+    let args = args
+        .iter()
+        .map(|arg| arg.replace("{}", &address))
+        .collect::<Vec<_>>();
+    assert_failure(
+        &env.submit_message(&args.iter().map(String::as_str).collect::<Vec<_>>()),
+        expected,
+    );
+}
+
+/// A fee payer given as an address still signs when the same key is a local relay signer.
+#[test]
+fn sign_only_fee_payer_address_signs_as_local_relay_signer() {
+    let env = SubmitTestEnv::new();
+    let run = env.sign_only(&[
+        "--fee-payer",
+        &env.ordinary.pubkey().to_string(),
+        "--relay-signer",
+        &env.keypair_file(&env.ordinary),
+        "--yes",
+    ]);
+    let message_bytes = BASE64_STANDARD.decode(run.message.unwrap()).unwrap();
+    assert_eq!(
+        run.signers,
+        [format!(
+            "{}={}",
+            env.ordinary.pubkey(),
+            env.ordinary.sign_message(&message_bytes)
+        )]
+    );
+    assert!(run.absent.is_empty());
 }

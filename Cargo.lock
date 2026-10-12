@@ -10338,6 +10338,7 @@ dependencies = [
  "solana-keypair",
  "solana-message",
  "solana-native-token",
+ "solana-nonce",
  "solana-program-pack",
  "solana-remote-wallet",
  "solana-rpc-client",

@@ -75,7 +75,8 @@ pub(crate) struct ClientArgs {
     pub(crate) commitment: Option<CommitmentConfig>,
 
     /// Fee payer signer source: a keypair file, usb:// URL, prompt:// URL, or the ASK keyword.
-    /// Defaults to the configured keypair.
+    /// `transaction submit --sign-only` also accepts an address, whose signature is collected
+    /// separately. Defaults to the configured keypair.
     #[clap(long, global = true, value_parser = keypair_source_parser())]
     pub(crate) fee_payer: Option<SignerSource>,
 

@@ -42,7 +42,7 @@ pub(super) async fn run(
     output: OutputFormat,
 ) -> Result<String> {
     let nonce_keypair = match &command.nonce_keypair {
-        Some(source) => client.load_signer(source, "nonce account")?,
+        Some(source) => client.load_signer(source, "nonce account", false)?,
         None => Box::new(Keypair::new()),
     };
     let fee_payer = client.fee_payer()?;

@@ -44,6 +44,7 @@ solana-instruction = { version = "3.4.1", default-features = false }
 solana-keypair = "3.1.2"
 solana-message = { version = "4.4.1", default-features = false }
 solana-native-token = "3.0.0"
+solana-nonce = "3.2.0"
 solana-program-error = "3.0.1"
 solana-program-pack = "3.1.0"
 solana-remote-wallet = "4.2.1"

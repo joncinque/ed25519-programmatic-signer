@@ -136,12 +136,12 @@ pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -
     let next_nonce = next_nonce(&command.nonce_account, &execution_message).to_string();
 
     let signers = if command.signer.is_empty() {
-        vec![client.load_signer_or_config_default(None, "message authority")?]
+        vec![client.load_signer(&client.config_keypair_source()?, "message authority", false)?]
     } else {
         command
             .signer
             .iter()
-            .map(|source| client.load_signer(source, "message authority"))
+            .map(|source| client.load_signer(source, "message authority", false))
             .collect::<Result<Vec<_>>>()?
     };
     let mut unique_signers = Vec::new();
