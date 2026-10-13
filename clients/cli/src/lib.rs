@@ -3,7 +3,10 @@ mod client;
 mod commands;
 mod output;
 
-pub use commands::nonce::{create::NonceCreateOutput, show::NonceShowOutput};
+pub use commands::{
+    migrate::{Authorization, RequiredSigners, stake::StakeMigrationOutput},
+    nonce::{create::NonceCreateOutput, show::NonceShowOutput},
+};
 use {
     anyhow::Result,
     clap::{CommandFactory, FromArgMatches},

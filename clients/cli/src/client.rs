@@ -10,6 +10,7 @@ use {
         keypair::{SignerFromPathConfig, signer_from_source_with_config},
     },
     solana_cli_config::{CONFIG_FILE, Config as SolanaCliConfig},
+    solana_clock::Clock,
     solana_commitment_config::CommitmentConfig,
     solana_hash::Hash,
     solana_nonce::{
@@ -26,6 +27,7 @@ use {
         response::RpcSimulateTransactionResult,
     },
     solana_signer::Signer,
+    solana_stake_interface::state::StakeStateV2,
     solana_transaction::versioned::VersionedTransaction,
     spl_nonce_interface::state::Nonce,
     std::{cell::RefCell, io::ErrorKind, path::Path, rc::Rc, str::FromStr},
@@ -141,6 +143,27 @@ impl Client {
         decode_nonce_account(address, account)
     }
 
+    /// Fetch a stake account's state.
+    pub(crate) async fn stake_account(&self, address: &Address) -> Result<StakeStateV2> {
+        let account = self
+            .rpc
+            .get_account_with_commitment(address, self.rpc.commitment())
+            .await
+            .with_context(|| format!("failed to fetch account {address}"))?
+            .value
+            .with_context(|| format!("stake account {address} was not found"))?;
+        decode_stake_account(address, &account)
+    }
+
+    pub(crate) async fn clock(&self) -> Result<Clock> {
+        let data = self
+            .rpc
+            .get_account_data(&solana_sdk_ids::sysvar::clock::id())
+            .await
+            .context("failed to fetch the clock sysvar")?;
+        wincode::deserialize(&data).context("invalid clock sysvar data")
+    }
+
     /// Fetch a System Program nonce account, used as a relay transaction's durable nonce.
     pub(crate) async fn durable_nonce_account(&self, address: &Address) -> Result<Data> {
         let account = self
@@ -217,6 +240,16 @@ fn decode_nonce_account(address: &Address, account: Account) -> Result<NonceAcco
         state,
         lamports: account.lamports,
     })
+}
+
+fn decode_stake_account(address: &Address, account: &Account) -> Result<StakeStateV2> {
+    ensure!(
+        account.owner == solana_stake_interface::program::id(),
+        "account {address} is owned by {}, not the Stake Program",
+        account.owner
+    );
+    wincode::deserialize(&account.data)
+        .with_context(|| format!("account {address} contains invalid stake data"))
 }
 
 fn decode_durable_nonce_account(address: &Address, account: &Account) -> Result<Data> {

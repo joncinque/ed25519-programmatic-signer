@@ -6859,6 +6859,7 @@ dependencies = [
  "solana-sdk-ids",
  "solana-sdk-macro",
  "solana-sysvar-id",
+ "wincode",
 ]
 
 [[package]]
@@ -10332,6 +10333,7 @@ dependencies = [
  "solana-clap-v3-utils",
  "solana-cli-config",
  "solana-cli-output",
+ "solana-clock",
  "solana-commitment-config",
  "solana-hash 4.4.0",
  "solana-instruction",
@@ -10343,8 +10345,10 @@ dependencies = [
  "solana-remote-wallet",
  "solana-rpc-client",
  "solana-rpc-client-types",
+ "solana-sdk-ids",
  "solana-signature",
  "solana-signer",
+ "solana-stake-interface",
  "solana-system-interface 3.2.0",
  "solana-test-validator",
  "solana-transaction",
