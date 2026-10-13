@@ -5,6 +5,7 @@ use {
     },
     base64::{Engine, prelude::BASE64_STANDARD},
     solana_address::Address,
+    solana_cli_output::CliSignOnlyData,
     solana_hash::Hash,
     solana_keypair::{Keypair, write_keypair_file},
     solana_message::{VersionedMessage, v1},
@@ -807,6 +808,97 @@ pub async fn submits_with_blockhash(env: &TestEnv) {
         None,
     );
     test.assert_received(env, 1).await;
+}
+
+/// The fee payer and forwarded signer each sign in a separate --sign-only run, and a final run
+/// with no local signers submits their signatures.
+pub async fn submits_with_offline_relay_signatures(env: &TestEnv) {
+    let authority = Keypair::new();
+    let signer = programmatic_signer(&authority.pubkey());
+    let ordinary = Keypair::new();
+    let fee_payer = Keypair::new();
+    fund(env, &[signer, ordinary.pubkey(), fee_payer.pubkey()]).await;
+    let test = SubmitTest::new(env, &signer).await;
+    // The durable nonce authority defaults to the fee payer.
+    let durable_nonce = create_durable_nonce(env, &fee_payer.pubkey()).await;
+    let value = durable_nonce_value(env, &durable_nonce).await;
+    let message = build_authorization_message(
+        &test.execution_message(&[signer, ordinary.pubkey()]),
+        &test.nonce_account,
+        &signer,
+        &[authority.pubkey()],
+    );
+    let authority_entry = signature_entry(&authority, &message);
+    let durable_nonce = durable_nonce.to_string();
+    let value = value.to_string();
+    let fee_payer_address = fee_payer.pubkey().to_string();
+    let fee_payer_file = keypair_file(&fee_payer);
+    let ordinary_file = keypair_file(&ordinary);
+    let sign_only = |extra: &[&str]| {
+        let mut args = vec![
+            "--output",
+            "json",
+            "--signer",
+            &authority_entry,
+            "--durable-nonce",
+            &durable_nonce,
+            "--blockhash",
+            &value,
+            "--sign-only",
+        ];
+        args.extend_from_slice(extra);
+        let output = submit(env, &message, &args, "");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let [entry] = serde_json::from_slice::<CliSignOnlyData>(&output.stdout)
+            .unwrap()
+            .signers
+            .try_into()
+            .unwrap();
+        entry
+    };
+    let fee_payer_entry = sign_only(&["--fee-payer", fee_payer_file.path().to_str().unwrap()]);
+    let ordinary_entry = sign_only(&[
+        "--fee-payer",
+        &fee_payer_address,
+        "--relay-signer",
+        ordinary_file.path().to_str().unwrap(),
+        "--yes",
+    ]);
+
+    // No local signer remains, so there is no signing summary.
+    assert_submitted(
+        &submit(
+            env,
+            &message,
+            &[
+                "--signer",
+                &authority_entry,
+                "--fee-payer",
+                &fee_payer_address,
+                "--durable-nonce",
+                &durable_nonce,
+                "--blockhash",
+                &value,
+                "--relay-signature",
+                &fee_payer_entry,
+                "--relay-signature",
+                &ordinary_entry,
+            ],
+            "",
+        ),
+        None,
+    );
+    test.assert_received(env, 2).await;
+    assert_ne!(
+        durable_nonce_value(env, &durable_nonce.parse().unwrap())
+            .await
+            .to_string(),
+        value
+    );
 }
 
 pub async fn rejects_stale_durable_nonce_value(env: &TestEnv) {

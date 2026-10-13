@@ -20,7 +20,7 @@ use {
             submits_with_authority_as_execution_message_non_signer, submits_with_blockhash,
             submits_with_durable_nonce, submits_with_fee_payer_as_forwarded_signer,
             submits_with_forwarded_authority, submits_with_forwarded_ordinary_signer,
-            submits_with_plain_key_nonce_authority,
+            submits_with_offline_relay_signatures, submits_with_plain_key_nonce_authority,
         },
     },
     libtest_mimic::{Arguments, Trial},
@@ -89,6 +89,7 @@ fn main() -> ExitCode {
         async_trial!(rejects_nonce_authority_mismatch, env, runtime_handle),
         async_trial!(submits_with_blockhash, env, runtime_handle),
         async_trial!(submits_with_durable_nonce, env, runtime_handle),
+        async_trial!(submits_with_offline_relay_signatures, env, runtime_handle),
         async_trial!(rejects_stale_durable_nonce_value, env, runtime_handle),
         async_trial!(
             rejects_durable_nonce_authority_mismatch,

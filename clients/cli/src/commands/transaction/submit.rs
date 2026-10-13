@@ -9,7 +9,9 @@ use {
     serde::Serialize,
     solana_address::Address,
     solana_clap_v3_utils::input_parsers::signer::{SignerSource, SignerSourceKind},
-    solana_cli_output::{ReturnSignersConfig, return_signers_data},
+    solana_cli_output::{
+        CliSignOnlyData, ReturnSignersConfig, display::writeln_name_value, return_signers_data,
+    },
     solana_hash::Hash,
     solana_message::{VersionedMessage, v1},
     solana_signature::Signature,
@@ -40,6 +42,13 @@ pub(super) struct SubmitCommand {
     #[clap(long, value_parser = keypair_source_parser())]
     relay_signer: Vec<SignerSource>,
 
+    /// Relay transaction signer address and signature returned by `transaction submit
+    /// --sign-only`, used in place of a local signer. Repeat for each signer that signed
+    /// separately. Requires --blockhash, so this run builds the same relay transaction as the
+    /// --sign-only runs.
+    #[clap(long, value_name = "ADDRESS=SIGNATURE", requires = "blockhash")]
+    relay_signature: Vec<String>,
+
     /// System Program nonce account to use as the relay transaction's durable nonce, in place of
     /// a recent blockhash. The relay transaction advances it first. This is separate from the SPL
     /// nonce account protecting the execution message.
@@ -47,8 +56,8 @@ pub(super) struct SubmitCommand {
     durable_nonce: Option<Address>,
 
     /// Durable nonce authority signer source: a keypair file, usb:// URL, prompt:// URL, or the
-    /// ASK keyword. With --sign-only, also accepts an address, whose signature is collected
-    /// separately. Defaults to the fee payer.
+    /// ASK keyword. With --sign-only or a matching --relay-signature, also accepts an address,
+    /// whose signature is collected separately. Defaults to the fee payer.
     #[clap(
         long,
         requires = "durable-nonce",
@@ -62,14 +71,14 @@ pub(super) struct SubmitCommand {
     #[clap(long, value_name = "HASH")]
     blockhash: Option<Hash>,
 
-    /// Sign the relay transaction without submitting it, and print the signatures of local
-    /// signers along with any absent signers. Makes no RPC calls. Each run must use the same
-    /// arguments, apart from which signers are local. Requires --blockhash.
+    /// Sign the relay transaction without submitting it, and print its message hash and the
+    /// signatures of local signers along with any absent signers. Makes no RPC calls. Each run
+    /// must use the same arguments, apart from which signers are local. Requires --blockhash.
     #[clap(long, requires = "blockhash")]
     sign_only: bool,
 
-    /// With --sign-only, also print the base64-encoded relay transaction message, to check that
-    /// separate runs sign the same message.
+    /// With --sign-only, also print the base64-encoded relay transaction message, to inspect it or
+    /// find how separate runs differ when their relay message hashes do not match.
     #[clap(long, requires = "sign-only")]
     dump_transaction_message: bool,
 
@@ -100,9 +109,22 @@ pub(super) async fn run(
         &required_signers,
         &execute,
     )?;
+    let relay_signatures = command
+        .relay_signature
+        .iter()
+        .map(|entry| parse_signature_entry(entry, "relay signature"))
+        .collect::<Result<BTreeMap<_, _>>>()?;
 
-    // With --sign-only, the fee payer and durable nonce authority may be given as an address.
-    // They load as null signers, leaving their signatures absent for another run to provide.
+    // The fee payer and durable nonce authority may be given as an address with --sign-only, or
+    // with a --relay-signature for it. They load as null signers, whose signatures another run
+    // provides. Relay signatures are not loaded as presigners, because
+    // `signer_from_source_with_config` looks those up in the `--signer` arg, which holds
+    // authorization message signatures here.
+    let allow_null_signer = |source: &SignerSource| {
+        command.sign_only
+            || matches!(&source.kind, SignerSourceKind::Pubkey(address)
+                if relay_signatures.contains_key(address))
+    };
     let mut relay_signers = Vec::new();
     let fee_payer_source = client.fee_payer_source()?;
     let fee_payer_address = load_relay_signer(
@@ -110,7 +132,7 @@ pub(super) async fn run(
         client,
         &fee_payer_source,
         "fee payer",
-        command.sign_only,
+        allow_null_signer(&fee_payer_source),
     )?;
     let durable_nonce = match command.durable_nonce {
         Some(address) => {
@@ -120,7 +142,7 @@ pub(super) async fn run(
                     client,
                     source,
                     "durable nonce authority",
-                    command.sign_only,
+                    allow_null_signer(source),
                 )?,
                 None => fee_payer_address,
             };
@@ -144,6 +166,12 @@ pub(super) async fn run(
         );
         add_relay_signer(&mut relay_signers, address, signer);
     }
+    for (address, _) in &relay_signers {
+        ensure!(
+            !relay_signatures.contains_key(address),
+            "{address} has both a local signer and a --relay-signature"
+        );
+    }
     // Relay signers on the authorization message have their signer privilege forwarded to the
     // executor, so they review it like `transaction sign`. A fee payer or durable nonce authority
     // that is not on the authorization message only signs for the relay transaction.
@@ -158,8 +186,9 @@ pub(super) async fn run(
 
     // Authorities sign the authorization message with `transaction sign`. Signers the executor
     // uses directly sign the relay transaction instead, which is how the executor gets their
-    // signer privilege. One address can be both. A --sign-only run signs for the forwarded
-    // signers it has, and reports the rest as absent.
+    // signer privilege. One address can be both. A forwarded signer may sign in a separate
+    // --sign-only run, and a --sign-only run reports the forwarded signers it does not have as
+    // absent.
     for address in &required_signers {
         let is_pda_authority = execute.is_pda_authority(address);
         let is_forwarded = execute.is_executor_signer(address);
@@ -172,9 +201,12 @@ pub(super) async fn run(
             "missing signature for authority {address}, authorities sign with `transaction sign`"
         );
         ensure!(
-            !is_forwarded || is_relay(address) || command.sign_only,
+            !is_forwarded
+                || is_relay(address)
+                || relay_signatures.contains_key(address)
+                || command.sign_only,
             "{address} is a forwarded signer and must sign the relay transaction; pass it with \
-             --relay-signer"
+             --relay-signer or --relay-signature"
         );
     }
 
@@ -195,6 +227,50 @@ pub(super) async fn run(
             },
         }
     };
+
+    // Forwarded signers without an authority signature approve through their relay transaction
+    // signature instead, which Submit accepts in place of an authorization message signature.
+    let signatures = required_signers
+        .iter()
+        .map(|address| authority_signatures.get(address).copied())
+        .collect();
+
+    let mut submit = spl_ed25519_signer_client::instruction::submit(
+        signatures,
+        VersionedMessage::V1(authorization_message.clone()),
+    );
+    // Forwarded signers need to sign the relay transaction.
+    for meta in &mut submit.accounts {
+        meta.is_signer |=
+            required_signers.contains(&meta.pubkey) && execute.is_executor_signer(&meta.pubkey);
+    }
+    // A durable nonce transaction must advance its nonce in its first instruction.
+    let instructions = match durable_nonce {
+        Some((address, authority)) => vec![advance_nonce_account(&address, &authority), submit],
+        None => vec![submit],
+    };
+    let mut transaction = Transaction::new_with_payer(&instructions, Some(&fee_payer_address));
+    transaction.message.recent_blockhash = blockhash;
+    // Check relay signatures before asking local signers to sign. Each must be for this exact
+    // relay transaction, so a mismatch means its run used different arguments.
+    let message_data = transaction.message_data();
+    let relay_message_hash = VersionedMessage::hash_raw_message(&message_data);
+    let relay_signatures = relay_signatures
+        .into_iter()
+        .map(|(address, signature)| {
+            let index = transaction.message.account_keys
+                [..usize::from(transaction.message.header.num_required_signatures)]
+                .iter()
+                .position(|key| key == &address)
+                .with_context(|| format!("{address} is not a relay transaction signer"))?;
+            ensure!(
+                signature.verify(address.as_ref(), &message_data),
+                "invalid relay signature for {address}, check its --sign-only run used the same \
+                 arguments"
+            );
+            Ok((index, signature))
+        })
+        .collect::<Result<Vec<_>>>()?;
 
     if !authorization_signers.is_empty() {
         if !command.quiet {
@@ -229,45 +305,31 @@ pub(super) async fn run(
         confirm_signing(&authorization_signers, command.yes)?;
     }
 
-    // Forwarded signers without an authority signature approve through their relay transaction
-    // signature instead, which Submit accepts in place of an authorization message signature.
-    let signatures = required_signers
-        .iter()
-        .map(|address| authority_signatures.get(address).copied())
-        .collect();
-
-    let mut submit = spl_ed25519_signer_client::instruction::submit(
-        signatures,
-        VersionedMessage::V1(authorization_message),
-    );
-    // Forwarded signers need to sign the relay transaction.
-    for meta in &mut submit.accounts {
-        meta.is_signer |=
-            required_signers.contains(&meta.pubkey) && execute.is_executor_signer(&meta.pubkey);
-    }
-    // A durable nonce transaction must advance its nonce in its first instruction.
-    let instructions = match durable_nonce {
-        Some((address, authority)) => vec![advance_nonce_account(&address, &authority), submit],
-        None => vec![submit],
-    };
     let relay_signers = authorization_signers
         .iter()
         .map(|(_, signer)| signer.as_ref())
         .chain(relay_only_signers.iter().map(|(_, signer)| signer.as_ref()))
         .collect::<Vec<_>>();
 
-    let mut transaction = Transaction::new_with_payer(&instructions, Some(&fee_payer_address));
+    // Fill the slots of signers that signed in a separate run. The relay transaction already has
+    // its blockhash, so signing below keeps them.
+    for (index, signature) in relay_signatures {
+        transaction.signatures[index] = signature;
+    }
     if command.sign_only {
         // Signers given as an address stay absent for another run to provide.
         transaction
             .try_partial_sign(&relay_signers, blockhash)
             .context("failed to sign relay transaction")?;
-        return output.render(&return_signers_data(
-            &transaction,
-            &ReturnSignersConfig {
-                dump_transaction_message: command.dump_transaction_message,
-            },
-        ));
+        return output.render(&SignOnlyOutput {
+            relay_message_hash: relay_message_hash.to_string(),
+            data: return_signers_data(
+                &transaction,
+                &ReturnSignersConfig {
+                    dump_transaction_message: command.dump_transaction_message,
+                },
+            ),
+        });
     }
     // Every signature must be present before submitting.
     transaction
@@ -440,11 +502,7 @@ fn verify_authority_signatures(
     let message_bytes = message.serialize();
     let mut signatures = BTreeMap::new();
     for entry in entries {
-        let (address, signature) = entry
-            .split_once('=')
-            .context("invalid authority: expected ADDRESS=SIGNATURE")?;
-        let address = Address::from_str(address).context("invalid authority address")?;
-        let signature = Signature::from_str(signature).context("invalid authority signature")?;
+        let (address, signature) = parse_signature_entry(entry, "authority")?;
         ensure!(
             required_signers.contains(&address),
             "{address} is not a signer on the authorization message"
@@ -461,6 +519,34 @@ fn verify_authority_signatures(
         signatures.insert(address, signature);
     }
     Ok(signatures)
+}
+
+/// Parse an `ADDRESS=SIGNATURE` pair, naming it `kind` in errors.
+fn parse_signature_entry(entry: &str, kind: &str) -> Result<(Address, Signature)> {
+    let (address, signature) = entry
+        .split_once('=')
+        .with_context(|| format!("invalid {kind}: expected ADDRESS=SIGNATURE"))?;
+    let address = Address::from_str(address).with_context(|| format!("invalid {kind} address"))?;
+    let signature =
+        Signature::from_str(signature).with_context(|| format!("invalid {kind} signature"))?;
+    Ok((address, signature))
+}
+
+/// `--sign-only` output: `CliSignOnlyData` with the relay message hash, so separate runs
+/// can check they sign the same message.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SignOnlyOutput {
+    relay_message_hash: String,
+    #[serde(flatten)]
+    data: CliSignOnlyData,
+}
+
+impl fmt::Display for SignOnlyOutput {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.data)?;
+        writeln_name_value(f, "Relay Message Hash:", &self.relay_message_hash)
+    }
 }
 
 #[derive(Serialize)]

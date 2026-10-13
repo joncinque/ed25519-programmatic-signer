@@ -123,7 +123,8 @@ impl SubmitTestEnv {
     }
 
     /// Run `--sign-only` with the authority signature and durable nonce, returning the JSON
-    /// output. The RPC endpoint is unreachable, so this also checks no RPC calls are made.
+    /// output after checking its relay message hash. The RPC endpoint is unreachable, so this
+    /// also checks no RPC calls are made.
     fn sign_only(&self, extra: &[&str]) -> CliSignOnlyData {
         let authority_entry = self.authority_entry();
         let durable_nonce = self.durable_nonce.to_string();
@@ -147,7 +148,16 @@ impl SubmitTestEnv {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        serde_json::from_slice(&output.stdout).unwrap()
+        let json = serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap();
+        let data = serde_json::from_value::<CliSignOnlyData>(json.clone()).unwrap();
+        let message_bytes = BASE64_STANDARD
+            .decode(data.message.as_ref().unwrap())
+            .unwrap();
+        assert_eq!(
+            json["relayMessageHash"],
+            VersionedMessage::hash_raw_message(&message_bytes).to_string()
+        );
+        data
     }
 
     /// Valid input fails only when the command reaches the unreachable RPC endpoint.
@@ -758,6 +768,7 @@ fn rejects_address_signer_without_sign_only(args: &[&str]) {
 
 #[test_case(&["--sign-only"], "--blockhash <HASH>"; "sign only without blockhash")]
 #[test_case(&["--dump-transaction-message"], "--sign-only"; "dump without sign only")]
+#[test_case(&["--relay-signature", "{}=1"], "--blockhash <HASH>"; "relay signature without blockhash")]
 #[test_case(&["--durable-nonce-authority", "{}"], "--durable-nonce <ADDRESS>"; "durable nonce authority without durable nonce")]
 fn rejects_missing_required_args(args: &[&str], expected: &str) {
     let env = SubmitTestEnv::new();
@@ -793,4 +804,173 @@ fn sign_only_fee_payer_address_signs_as_local_relay_signer() {
         )]
     );
     assert!(run.absent.is_empty());
+}
+
+/// Signatures from one --sign-only run are combined into the next, which reports them with its
+/// own.
+#[test]
+fn sign_only_accepts_relay_signatures() {
+    let env = SubmitTestEnv::new();
+    let fee_payer = env.fee_payer.pubkey().to_string();
+    let first = env.sign_only(&["--fee-payer", &env.keypair_file(&env.fee_payer)]);
+    let [fee_payer_entry] = first.signers.as_slice() else {
+        panic!("expected one signature, got {:?}", first.signers);
+    };
+    let second = env.sign_only(&[
+        "--fee-payer",
+        &fee_payer,
+        "--relay-signature",
+        fee_payer_entry,
+        "--relay-signer",
+        &env.keypair_file(&env.ordinary),
+        "--yes",
+    ]);
+    assert_eq!(second.message, first.message);
+    let message_bytes = BASE64_STANDARD.decode(second.message.unwrap()).unwrap();
+    assert_eq!(
+        second.signers.iter().collect::<BTreeSet<_>>(),
+        BTreeSet::from([
+            fee_payer_entry,
+            &format!(
+                "{}={}",
+                env.ordinary.pubkey(),
+                env.ordinary.sign_message(&message_bytes)
+            ),
+        ])
+    );
+    assert!(second.absent.is_empty());
+    assert!(second.bad_sig.is_empty());
+}
+
+/// A forwarded signer's relay signature stands in for --relay-signer, and an address fee payer
+/// loads with its relay signature, up to the nonce account lookup.
+#[test_case(false; "forwarded signer")]
+#[test_case(true; "forwarded signer and fee payer")]
+fn accepts_relay_signatures_online(fee_payer_signature: bool) {
+    let env = SubmitTestEnv::new();
+    let signature = Signature::from([1; 64]);
+    let ordinary_entry = format!("{}={signature}", env.ordinary.pubkey());
+    let fee_payer_entry = format!("{}={signature}", env.fee_payer.pubkey());
+    let fee_payer = env.fee_payer.pubkey().to_string();
+    let fee_payer_file = env.keypair_file(&env.fee_payer);
+    let durable_nonce = env.durable_nonce.to_string();
+    let durable_nonce_value = env.durable_nonce_value.to_string();
+    let authority_entry = env.authority_entry();
+    let mut args = vec![
+        "--signer",
+        &authority_entry,
+        "--durable-nonce",
+        &durable_nonce,
+        "--blockhash",
+        &durable_nonce_value,
+        "--relay-signature",
+        &ordinary_entry,
+    ];
+    if fee_payer_signature {
+        args.extend([
+            "--fee-payer",
+            &fee_payer,
+            "--relay-signature",
+            &fee_payer_entry,
+        ]);
+    } else {
+        args.extend(["--fee-payer", &fee_payer_file]);
+    }
+    env.assert_passes_offline_checks(&env.submit_message(&args));
+}
+
+#[test_case("missing separator", "invalid relay signature: expected ADDRESS=SIGNATURE"; "missing separator")]
+#[test_case("invalid=invalid", "invalid relay signature address"; "invalid address")]
+#[test_case("11111111111111111111111111111111=invalid", "invalid relay signature signature"; "invalid signature")]
+fn rejects_malformed_relay_signature_args(entry: &str, expected: &str) {
+    let env = SubmitTestEnv::new();
+    assert_failure(
+        &env.submit_message(&[
+            "--durable-nonce",
+            &env.durable_nonce.to_string(),
+            "--blockhash",
+            &env.durable_nonce_value.to_string(),
+            "--relay-signature",
+            entry,
+        ]),
+        expected,
+    );
+}
+
+#[test]
+fn rejects_relay_signature_for_a_different_relay_transaction() {
+    let env = SubmitTestEnv::new();
+    let entry = format!(
+        "{}={}",
+        env.ordinary.pubkey(),
+        env.ordinary.sign_message(b"another relay transaction")
+    );
+    assert_failure(
+        &env.submit_message(&[
+            "--signer",
+            &env.authority_entry(),
+            "--fee-payer",
+            &env.keypair_file(&env.fee_payer),
+            "--durable-nonce",
+            &env.durable_nonce.to_string(),
+            "--blockhash",
+            &env.durable_nonce_value.to_string(),
+            "--relay-signature",
+            &entry,
+            "--sign-only",
+        ]),
+        &format!(
+            "invalid relay signature for {}, check its --sign-only run used the same arguments",
+            env.ordinary.pubkey()
+        ),
+    );
+}
+
+#[test]
+fn rejects_relay_signature_for_non_relay_signer() {
+    let env = SubmitTestEnv::new();
+    let stranger = Keypair::new();
+    let entry = format!("{}={}", stranger.pubkey(), Signature::from([1; 64]));
+    assert_failure(
+        &env.submit_message(&[
+            "--signer",
+            &env.authority_entry(),
+            "--fee-payer",
+            &env.keypair_file(&env.fee_payer),
+            "--durable-nonce",
+            &env.durable_nonce.to_string(),
+            "--blockhash",
+            &env.durable_nonce_value.to_string(),
+            "--relay-signature",
+            &entry,
+            "--sign-only",
+        ]),
+        &format!("{} is not a relay transaction signer", stranger.pubkey()),
+    );
+}
+
+#[test]
+fn rejects_relay_signature_for_local_signer() {
+    let env = SubmitTestEnv::new();
+    let entry = format!("{}={}", env.ordinary.pubkey(), Signature::from([1; 64]));
+    assert_failure(
+        &env.submit_message(&[
+            "--signer",
+            &env.authority_entry(),
+            "--fee-payer",
+            &env.keypair_file(&env.fee_payer),
+            "--durable-nonce",
+            &env.durable_nonce.to_string(),
+            "--blockhash",
+            &env.durable_nonce_value.to_string(),
+            "--relay-signer",
+            &env.keypair_file(&env.ordinary),
+            "--relay-signature",
+            &entry,
+        ]),
+        &format!(
+            "{} has both a local signer and a --relay-signature",
+            env.ordinary.pubkey()
+        ),
+    );
 }
