@@ -43,6 +43,8 @@ solana-commitment-config = "3.1.1"
 solana-hash = "4.4.0"
 solana-instruction = { version = "3.4.1", default-features = false }
 solana-keypair = "3.1.2"
+# 8.1 switches its wincode integration to 0.6.
+solana-loader-v3-interface = "=8.0.1"
 solana-message = { version = "4.4.1", default-features = false }
 solana-native-token = "3.0.0"
 solana-nonce = "3.2.0"

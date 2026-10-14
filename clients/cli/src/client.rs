@@ -13,6 +13,7 @@ use {
     solana_clock::Clock,
     solana_commitment_config::CommitmentConfig,
     solana_hash::Hash,
+    solana_loader_v3_interface::state::UpgradeableLoaderState,
     solana_nonce::{
         state::{Data, State},
         versions::Versions,
@@ -160,6 +161,16 @@ impl Client {
         decode_vote_account(address, &account)
     }
 
+    /// Fetch an upgradeable loader (v3) account's state.
+    pub(crate) async fn upgradeable_loader_account(
+        &self,
+        address: &Address,
+        kind: &str,
+    ) -> Result<UpgradeableLoaderState> {
+        let account = self.account(address, kind).await?;
+        decode_upgradeable_loader_account(address, &account)
+    }
+
     pub(crate) async fn clock(&self) -> Result<Clock> {
         let data = self
             .rpc
@@ -259,6 +270,21 @@ fn decode_vote_account(address: &Address, account: &Account) -> Result<VoteState
     );
     wincode::deserialize(&account.data)
         .with_context(|| format!("account {address} contains invalid vote data"))
+}
+
+fn decode_upgradeable_loader_account(
+    address: &Address,
+    account: &Account,
+) -> Result<UpgradeableLoaderState> {
+    ensure!(
+        account.owner == solana_sdk_ids::bpf_loader_upgradeable::id(),
+        "account {address} is owned by {}, not the BPF Upgradeable Loader",
+        account.owner
+    );
+    // Program data and buffer accounts store the program's bytes after this state.
+    // `deserialize` stops after the state and ignores the rest.
+    wincode::deserialize(&account.data)
+        .with_context(|| format!("account {address} contains invalid upgradeable loader data"))
 }
 
 fn decode_durable_nonce_account(address: &Address, account: &Account) -> Result<Data> {
