@@ -9952,6 +9952,8 @@ dependencies = [
  "solana-serialize-utils",
  "solana-short-vec",
  "solana-system-interface 3.2.0",
+ "solana-wincode-varint",
+ "wincode",
 ]
 
 [[package]]
@@ -10353,6 +10355,7 @@ dependencies = [
  "solana-test-validator",
  "solana-transaction",
  "solana-transaction-status",
+ "solana-vote-interface",
  "spl-ed25519-signer-client",
  "spl-message-executor-client",
  "spl-message-executor-interface",

@@ -29,6 +29,7 @@ use {
     solana_signer::Signer,
     solana_stake_interface::state::StakeStateV2,
     solana_transaction::versioned::VersionedTransaction,
+    solana_vote_interface::state::VoteStateVersions,
     spl_nonce_interface::state::Nonce,
     std::{cell::RefCell, io::ErrorKind, path::Path, rc::Rc, str::FromStr},
 };
@@ -132,27 +133,31 @@ impl Client {
             .context("failed to get latest blockhash")
     }
 
-    pub(crate) async fn nonce_account(&self, address: &Address) -> Result<NonceAccount> {
-        let account = self
-            .rpc
+    /// Fetch an account that must exist. `kind` names it in the error when it doesn't.
+    async fn account(&self, address: &Address, kind: &str) -> Result<Account> {
+        self.rpc
             .get_account_with_commitment(address, self.rpc.commitment())
             .await
             .with_context(|| format!("failed to fetch account {address}"))?
             .value
-            .with_context(|| format!("nonce account {address} was not found"))?;
+            .with_context(|| format!("{kind} {address} was not found"))
+    }
+
+    pub(crate) async fn nonce_account(&self, address: &Address) -> Result<NonceAccount> {
+        let account = self.account(address, "nonce account").await?;
         decode_nonce_account(address, account)
     }
 
     /// Fetch a stake account's state.
     pub(crate) async fn stake_account(&self, address: &Address) -> Result<StakeStateV2> {
-        let account = self
-            .rpc
-            .get_account_with_commitment(address, self.rpc.commitment())
-            .await
-            .with_context(|| format!("failed to fetch account {address}"))?
-            .value
-            .with_context(|| format!("stake account {address} was not found"))?;
+        let account = self.account(address, "stake account").await?;
         decode_stake_account(address, &account)
+    }
+
+    /// Fetch a vote account's state.
+    pub(crate) async fn vote_account(&self, address: &Address) -> Result<VoteStateVersions> {
+        let account = self.account(address, "vote account").await?;
+        decode_vote_account(address, &account)
     }
 
     pub(crate) async fn clock(&self) -> Result<Clock> {
@@ -166,13 +171,7 @@ impl Client {
 
     /// Fetch a System Program nonce account, used as a relay transaction's durable nonce.
     pub(crate) async fn durable_nonce_account(&self, address: &Address) -> Result<Data> {
-        let account = self
-            .rpc
-            .get_account_with_commitment(address, self.rpc.commitment())
-            .await
-            .with_context(|| format!("failed to fetch account {address}"))?
-            .value
-            .with_context(|| format!("durable nonce account {address} was not found"))?;
+        let account = self.account(address, "durable nonce account").await?;
         decode_durable_nonce_account(address, &account)
     }
 
@@ -250,6 +249,16 @@ fn decode_stake_account(address: &Address, account: &Account) -> Result<StakeSta
     );
     wincode::deserialize(&account.data)
         .with_context(|| format!("account {address} contains invalid stake data"))
+}
+
+fn decode_vote_account(address: &Address, account: &Account) -> Result<VoteStateVersions> {
+    ensure!(
+        account.owner == solana_sdk_ids::vote::id(),
+        "account {address} is owned by {}, not the Vote Program",
+        account.owner
+    );
+    wincode::deserialize(&account.data)
+        .with_context(|| format!("account {address} contains invalid vote data"))
 }
 
 fn decode_durable_nonce_account(address: &Address, account: &Account) -> Result<Data> {

@@ -1,4 +1,5 @@
 pub(crate) mod stake;
+pub(crate) mod vote;
 
 use {
     crate::{client::Client, output::OutputFormat},
@@ -23,6 +24,9 @@ pub(crate) struct MigrateCommand {
 enum MigrateSubcommand {
     /// Build an execution message moving a stake account's authorities to a programmatic signer.
     Stake(stake::StakeCommand),
+    /// Build an execution message moving a vote account's withdraw authority to a programmatic
+    /// signer.
+    Vote(vote::VoteCommand),
 }
 
 pub(crate) async fn run(
@@ -32,6 +36,7 @@ pub(crate) async fn run(
 ) -> Result<String> {
     match command.command {
         MigrateSubcommand::Stake(command) => stake::run(command, client, output).await,
+        MigrateSubcommand::Vote(command) => vote::run(command, client, output).await,
     }
 }
 

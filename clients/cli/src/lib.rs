@@ -4,7 +4,9 @@ mod commands;
 mod output;
 
 pub use commands::{
-    migrate::{Authorization, RequiredSigners, stake::StakeMigrationOutput},
+    migrate::{
+        Authorization, RequiredSigners, stake::StakeMigrationOutput, vote::VoteMigrationOutput,
+    },
     nonce::{create::NonceCreateOutput, show::NonceShowOutput},
 };
 use {
