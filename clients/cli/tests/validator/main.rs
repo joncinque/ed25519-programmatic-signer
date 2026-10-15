@@ -5,6 +5,12 @@ use {
             creates_and_shows_nonce_account, creates_nonce_account_with_cold_authority,
             creates_nonce_account_with_generated_keypair,
         },
+        test_migrate_mint::{
+            migrates_mint_authorities_between_programmatic_signers,
+            migrates_mint_without_freeze_authority, migrates_token_2022_mint_authorities,
+            migrates_token_2022_mint_authorities_one_at_a_time, migrates_token_mint_authorities,
+            migrates_token_mint_authorities_one_at_a_time, rejects_invalid_mint_migrations,
+        },
         test_migrate_program::{
             migrates_program_upgrade_authority_between_programmatic_signers,
             migrates_program_upgrade_authority_to_new_owner, rejects_invalid_program_migrations,
@@ -45,6 +51,7 @@ use {
 pub mod common;
 mod migration;
 mod nonce_create;
+mod test_migrate_mint;
 mod test_migrate_program;
 mod test_migrate_stake;
 mod test_migrate_vote;
@@ -159,6 +166,25 @@ fn main() -> ExitCode {
             runtime_handle
         ),
         async_trial!(rejects_invalid_program_migrations, env, runtime_handle),
+        async_trial!(migrates_token_mint_authorities, env, runtime_handle),
+        async_trial!(migrates_token_2022_mint_authorities, env, runtime_handle),
+        async_trial!(
+            migrates_token_mint_authorities_one_at_a_time,
+            env,
+            runtime_handle
+        ),
+        async_trial!(
+            migrates_token_2022_mint_authorities_one_at_a_time,
+            env,
+            runtime_handle
+        ),
+        async_trial!(
+            migrates_mint_authorities_between_programmatic_signers,
+            env,
+            runtime_handle
+        ),
+        async_trial!(migrates_mint_without_freeze_authority, env, runtime_handle),
+        async_trial!(rejects_invalid_mint_migrations, env, runtime_handle),
         async_trial!(
             submits_chain_signed_offline_with_next_nonce,
             env,

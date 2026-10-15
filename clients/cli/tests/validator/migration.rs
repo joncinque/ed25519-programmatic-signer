@@ -9,9 +9,11 @@ use {
     serde::{Deserialize, de::DeserializeOwned},
     solana_address::Address,
     solana_hash::Hash,
+    solana_instruction::Instruction,
     solana_keypair::{Keypair, write_keypair_file},
     solana_message::{VersionedMessage, v1},
     solana_signer::Signer,
+    solana_transaction::Transaction,
     spl_nonce_interface::state::Nonce,
     spl_programmatic_signer_cli::{Authorization, NonceCreateOutput, RequiredSigners},
     tempfile::NamedTempFile,
@@ -60,6 +62,22 @@ struct SignOutput {
 struct SignatureEntry {
     address: String,
     signature: String,
+}
+
+/// Send a transaction paid for by the test payer.
+pub async fn send(env: &TestEnv, instructions: &[Instruction], signers: &[&Keypair]) {
+    let mut all_signers = vec![&env.payer];
+    all_signers.extend_from_slice(signers);
+    let transaction = Transaction::new_signed_with_payer(
+        instructions,
+        Some(&env.payer.pubkey()),
+        &all_signers,
+        env.rpc.get_latest_blockhash().await.unwrap(),
+    );
+    env.rpc
+        .send_and_confirm_transaction(&transaction)
+        .await
+        .unwrap();
 }
 
 /// An SPL nonce account whose authority is `authority`'s programmatic signer.

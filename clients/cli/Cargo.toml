@@ -49,10 +49,12 @@ solana-transaction = { workspace = true, features = ["wincode"] }
 solana-transaction-status = { workspace = true, features = ["agave-unstable-api"] }
 solana-vote-interface = { workspace = true, features = ["bincode", "wincode"] }
 spl-ed25519-signer-client = { workspace = true }
+spl-memo-interface = { workspace = true }
 spl-message-executor-client = { workspace = true }
 spl-message-executor-interface = { workspace = true }
 spl-nonce-client = { workspace = true }
 spl-nonce-interface = { workspace = true }
+spl-token-2022-interface = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 wincode = { workspace = true }
 

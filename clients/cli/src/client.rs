@@ -32,6 +32,7 @@ use {
     solana_transaction::versioned::VersionedTransaction,
     solana_vote_interface::state::VoteStateVersions,
     spl_nonce_interface::state::Nonce,
+    spl_token_2022_interface::{extension::StateWithExtensions, state::Mint},
     std::{cell::RefCell, io::ErrorKind, path::Path, rc::Rc, str::FromStr},
 };
 
@@ -171,6 +172,13 @@ impl Client {
         decode_upgradeable_loader_account(address, &account)
     }
 
+    /// Fetch a Token or Token-2022 mint's base mint data, along with the token program that owns
+    /// the mint.
+    pub(crate) async fn mint(&self, address: &Address) -> Result<(Address, Mint)> {
+        let account = self.account(address, "mint").await?;
+        decode_mint(address, &account)
+    }
+
     pub(crate) async fn clock(&self) -> Result<Clock> {
         let data = self
             .rpc
@@ -285,6 +293,20 @@ fn decode_upgradeable_loader_account(
     // `deserialize` stops after the state and ignores the rest.
     wincode::deserialize(&account.data)
         .with_context(|| format!("account {address} contains invalid upgradeable loader data"))
+}
+
+fn decode_mint(address: &Address, account: &Account) -> Result<(Address, Mint)> {
+    // This accepts both the Token and Token-2022 program IDs.
+    ensure!(
+        spl_token_2022_interface::check_spl_token_program_account(&account.owner).is_ok(),
+        "account {address} is owned by {}, not the Token or Token-2022 Program",
+        account.owner
+    );
+    // This works for both Token and Token-2022 mints
+    let mint = StateWithExtensions::<Mint>::unpack(&account.data)
+        .with_context(|| format!("account {address} is not a mint"))?
+        .base;
+    Ok((account.owner, mint))
 }
 
 fn decode_durable_nonce_account(address: &Address, account: &Account) -> Result<Data> {

@@ -3,13 +3,12 @@ use {
         common::{execute::programmatic_signer, helpers::TestEnv},
         migration::{
             assert_signers, authorization, create_nonce, decode_execution_message,
-            execute_as_new_owner, migrate, migrate_error,
+            execute_as_new_owner, migrate, migrate_error, send,
         },
     },
     base64::{Engine, prelude::BASE64_STANDARD},
     solana_address::Address,
     solana_hash::Hash,
-    solana_instruction::Instruction,
     solana_keypair::Keypair,
     solana_loader_v3_interface::{
         get_program_data_address,
@@ -21,7 +20,6 @@ use {
     },
     solana_message::v1,
     solana_signer::Signer,
-    solana_transaction::Transaction,
     spl_programmatic_signer_cli::{Authorization, ProgramMigrationOutput},
 };
 
@@ -34,21 +32,6 @@ const WRITE_CHUNK_LEN: usize = 900;
 /// Source: <https://github.com/anza-xyz/agave/blob/c4b48df969a9e4f121e14a389bd7bec34c752507/programs/bpf_loader/test_elfs/out/sbpfv3_return_ok.so>
 /// (sha256 `7b7f204cc5691a93b8bbc2036b7fdb6977d237711e48c19a65688d53ce216736`).
 const PROGRAM: &[u8] = include_bytes!("../fixtures/sbpfv3_return_ok.so");
-
-async fn send(env: &TestEnv, instructions: &[Instruction], signers: &[&Keypair]) {
-    let mut all_signers = vec![&env.payer];
-    all_signers.extend_from_slice(signers);
-    let transaction = Transaction::new_signed_with_payer(
-        instructions,
-        Some(&env.payer.pubkey()),
-        &all_signers,
-        env.rpc.get_latest_blockhash().await.unwrap(),
-    );
-    env.rpc
-        .send_and_confirm_transaction(&transaction)
-        .await
-        .unwrap();
-}
 
 /// A buffer holding the program, with `authority` as its buffer authority.
 async fn write_buffer(env: &TestEnv, program: &[u8], authority: &Keypair) -> Address {

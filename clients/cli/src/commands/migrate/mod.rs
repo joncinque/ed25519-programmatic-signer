@@ -1,3 +1,4 @@
+pub(crate) mod mint;
 pub(crate) mod program;
 pub(crate) mod stake;
 pub(crate) mod vote;
@@ -23,6 +24,9 @@ pub(crate) struct MigrateCommand {
 
 #[derive(Debug, Subcommand)]
 enum MigrateSubcommand {
+    /// Build an execution message moving a Token or Token-2022 mint's mint and freeze
+    /// authorities to a programmatic signer.
+    Mint(mint::MintCommand),
     /// Build an execution message moving a program's upgrade authority to a programmatic signer.
     Program(program::ProgramCommand),
     /// Build an execution message moving a stake account's authorities to a programmatic signer.
@@ -38,6 +42,7 @@ pub(crate) async fn run(
     output: OutputFormat,
 ) -> Result<String> {
     match command.command {
+        MigrateSubcommand::Mint(command) => mint::run(command, client, output).await,
         MigrateSubcommand::Program(command) => program::run(command, client, output).await,
         MigrateSubcommand::Stake(command) => stake::run(command, client, output).await,
         MigrateSubcommand::Vote(command) => vote::run(command, client, output).await,
