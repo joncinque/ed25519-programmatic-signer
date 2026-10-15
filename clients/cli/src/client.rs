@@ -121,6 +121,13 @@ impl Client {
             .context("invalid configured keypair path")
     }
 
+    /// The pubkey of the keypair from the Solana CLI configuration.
+    pub(crate) fn config_pubkey(&self) -> Result<Address> {
+        let signer =
+            self.load_signer(&self.config_keypair_source()?, "configured keypair", false)?;
+        Ok(signer.pubkey())
+    }
+
     pub(crate) async fn minimum_balance_for_rent_exemption(&self, data_len: usize) -> Result<u64> {
         self.rpc
             .get_minimum_balance_for_rent_exemption(data_len)
@@ -135,13 +142,20 @@ impl Client {
             .context("failed to get latest blockhash")
     }
 
-    /// Fetch an account that must exist. `kind` names it in the error when it doesn't.
-    async fn account(&self, address: &Address, kind: &str) -> Result<Account> {
-        self.rpc
+    /// Fetch an account that may not exist.
+    pub(crate) async fn optional_account(&self, address: &Address) -> Result<Option<Account>> {
+        Ok(self
+            .rpc
             .get_account_with_commitment(address, self.rpc.commitment())
             .await
             .with_context(|| format!("failed to fetch account {address}"))?
-            .value
+            .value)
+    }
+
+    /// Fetch an account that must exist. `kind` names it in the error when it doesn't.
+    async fn account(&self, address: &Address, kind: &str) -> Result<Account> {
+        self.optional_account(address)
+            .await?
             .with_context(|| format!("{kind} {address} was not found"))
     }
 
@@ -175,8 +189,25 @@ impl Client {
     /// Fetch a Token or Token-2022 mint's base mint data, along with the token program that owns
     /// the mint.
     pub(crate) async fn mint(&self, address: &Address) -> Result<(Address, Mint)> {
-        let account = self.account(address, "mint").await?;
+        let account = self.token_program_account(address, "mint").await?;
         decode_mint(address, &account)
+    }
+
+    /// Fetch an account owned by the Token or Token-2022 Program, such as a mint or token
+    /// account. The account's owner is the token program.
+    pub(crate) async fn token_program_account(
+        &self,
+        address: &Address,
+        kind: &str,
+    ) -> Result<Account> {
+        let account = self.account(address, kind).await?;
+        // This accepts both the Token and Token-2022 program IDs.
+        ensure!(
+            spl_token_2022_interface::check_spl_token_program_account(&account.owner).is_ok(),
+            "account {address} is owned by {}, not the Token or Token-2022 Program",
+            account.owner
+        );
+        Ok(account)
     }
 
     pub(crate) async fn clock(&self) -> Result<Clock> {
@@ -296,12 +327,6 @@ fn decode_upgradeable_loader_account(
 }
 
 fn decode_mint(address: &Address, account: &Account) -> Result<(Address, Mint)> {
-    // This accepts both the Token and Token-2022 program IDs.
-    ensure!(
-        spl_token_2022_interface::check_spl_token_program_account(&account.owner).is_ok(),
-        "account {address} is owned by {}, not the Token or Token-2022 Program",
-        account.owner
-    );
     // This works for both Token and Token-2022 mints
     let mint = StateWithExtensions::<Mint>::unpack(&account.data)
         .with_context(|| format!("account {address} is not a mint"))?

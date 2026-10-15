@@ -49,6 +49,7 @@ solana-system-interface = { workspace = true, features = ["wincode"] }
 solana-transaction = { workspace = true, features = ["wincode"] }
 solana-transaction-status = { workspace = true, features = ["agave-unstable-api"] }
 solana-vote-interface = { workspace = true, features = ["bincode", "wincode"] }
+spl-associated-token-account-interface = { workspace = true }
 spl-ed25519-signer-client = { workspace = true }
 spl-memo-interface = { workspace = true }
 spl-message-executor-client = { workspace = true }
