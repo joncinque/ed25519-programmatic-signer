@@ -15,6 +15,10 @@ use {
             migrates_program_upgrade_authority_between_programmatic_signers,
             migrates_program_upgrade_authority_to_new_owner, rejects_invalid_program_migrations,
         },
+        test_migrate_sol::{
+            migrates_sol_between_programmatic_signers, migrates_sol_to_new_owner,
+            rejects_invalid_sol_migrations,
+        },
         test_migrate_stake::{
             migrates_stake_authorities_one_at_a_time, migrates_stake_between_programmatic_signers,
             migrates_stake_to_new_owner, migrates_stake_with_lockup_custodian,
@@ -68,6 +72,7 @@ mod migration;
 mod nonce_create;
 mod test_migrate_mint;
 mod test_migrate_program;
+mod test_migrate_sol;
 mod test_migrate_stake;
 mod test_migrate_token;
 mod test_migrate_vote;
@@ -231,6 +236,13 @@ fn main() -> ExitCode {
             env,
             runtime_handle
         ),
+        async_trial!(migrates_sol_to_new_owner, env, runtime_handle),
+        async_trial!(
+            migrates_sol_between_programmatic_signers,
+            env,
+            runtime_handle
+        ),
+        async_trial!(rejects_invalid_sol_migrations, env, runtime_handle),
         async_trial!(
             submits_chain_signed_offline_with_next_nonce,
             env,

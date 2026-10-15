@@ -193,6 +193,22 @@ impl Client {
         decode_mint(address, &account)
     }
 
+    /// Fetch a System Program account with no data, which the System Program can transfer
+    /// lamports from.
+    pub(crate) async fn system_account(&self, address: &Address) -> Result<Account> {
+        let account = self.account(address, "account").await?;
+        ensure!(
+            account.owner == solana_sdk_ids::system_program::id(),
+            "account {address} is owned by {}, not the System Program",
+            account.owner
+        );
+        ensure!(
+            account.data.is_empty(),
+            "account {address} holds data, so the System Program can't transfer from it"
+        );
+        Ok(account)
+    }
+
     /// Fetch an account owned by the Token or Token-2022 Program, such as a mint or token
     /// account. The account's owner is the token program.
     pub(crate) async fn token_program_account(

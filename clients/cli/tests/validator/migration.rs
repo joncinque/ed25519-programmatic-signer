@@ -118,20 +118,19 @@ pub fn migrate<T: DeserializeOwned>(
 ) -> T {
     let account = account.to_string();
     let new_owner = new_owner.map(ToString::to_string);
-    let mut args = vec![
-        "-C",
-        &env.config_file_path,
-        "--output",
-        "json",
-        "migrate",
-        kind,
-        &account,
-    ];
+    let mut args = vec![kind, &account];
     if let Some(new_owner) = &new_owner {
         args.extend(["--new-authority-signing-pubkey", new_owner]);
     }
     args.extend_from_slice(extra);
-    serde_json::from_slice(&run_psigner(&args).stdout).unwrap()
+    migrate_with_args(env, &args)
+}
+
+/// Run `migrate <args>` and parse its JSON output.
+pub fn migrate_with_args<T: DeserializeOwned>(env: &TestEnv, args: &[&str]) -> T {
+    let mut all_args = vec!["-C", &env.config_file_path, "--output", "json", "migrate"];
+    all_args.extend_from_slice(args);
+    serde_json::from_slice(&run_psigner(&all_args).stdout).unwrap()
 }
 
 /// Run a migration that must fail and return its stderr.
@@ -144,12 +143,19 @@ pub fn migrate_error(
 ) -> String {
     let account = account.to_string();
     let new_owner = new_owner.map(ToString::to_string);
-    let mut args = vec!["-C", &env.config_file_path, "migrate", kind, &account];
+    let mut args = vec![kind, &account];
     if let Some(new_owner) = &new_owner {
         args.extend(["--new-authority-signing-pubkey", new_owner]);
     }
     args.extend_from_slice(extra);
-    let output = run_psigner_with_input(&args, "");
+    migrate_error_with_args(env, &args)
+}
+
+/// Run `migrate <args>`, which must fail, and return its stderr.
+pub fn migrate_error_with_args(env: &TestEnv, args: &[&str]) -> String {
+    let mut all_args = vec!["-C", &env.config_file_path, "migrate"];
+    all_args.extend_from_slice(args);
+    let output = run_psigner_with_input(&all_args, "");
     assert!(!output.status.success());
     String::from_utf8(output.stderr).unwrap()
 }
