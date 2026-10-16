@@ -60,8 +60,12 @@
     "peerDependencies": {
         "@solana/kit": "^8.3.0"
     },
-    "engines": {
-        "node": ">=24.0.0"
+    "devEngines": {
+        "runtime": {
+            "name": "node",
+            "version": ">=24.0.0",
+            "onFail": "error"
+        }
     },
     "packageManager": "pnpm@10.15.0"
 }
