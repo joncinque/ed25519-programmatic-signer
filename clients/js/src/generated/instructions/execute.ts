@@ -113,7 +113,7 @@ export function getExecuteInstruction<
     TProgramAddress extends Address = typeof MESSAGE_EXECUTOR_PROGRAM_ADDRESS,
 >(
     input: ExecuteInput<TAccountNonceAuthority, TAccountNonceAccount, TAccountNonceProgram>,
-    config?: { programAddress?: TProgramAddress },
+    config?: { programAddress?: TProgramAddress | { readonly address: TProgramAddress } },
 ): ExecuteInstruction<
     TProgramAddress,
     ResolvedInstructionAccountMeta<TAccountNonceAuthority, InstructionAccountInputAddress<TAccountNonceAuthority>>,
@@ -121,7 +121,8 @@ export function getExecuteInstruction<
     ResolvedInstructionAccountMeta<TAccountNonceProgram, InstructionAccountInputAddress<TAccountNonceProgram>>
 > {
     // Program address.
-    const programAddress = config?.programAddress ?? MESSAGE_EXECUTOR_PROGRAM_ADDRESS;
+    const programAddressInput = config?.programAddress ?? MESSAGE_EXECUTOR_PROGRAM_ADDRESS;
+    const programAddress = typeof programAddressInput === 'string' ? programAddressInput : programAddressInput.address;
 
     // Account meta helper.
     const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');

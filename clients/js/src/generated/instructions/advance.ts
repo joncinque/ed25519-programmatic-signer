@@ -23,6 +23,7 @@ import {
     type FixedSizeCodec,
     type FixedSizeDecoder,
     type FixedSizeEncoder,
+    type HasAddress,
     type Instruction,
     type InstructionWithAccounts,
     type InstructionWithData,
@@ -65,7 +66,10 @@ export type AdvanceInstruction<
 
 export type AdvanceInstructionData = { discriminator: number; currentNonce: Address; transitionCommitment: Address };
 
-export type AdvanceInstructionDataArgs = { currentNonce: Address; transitionCommitment: Address };
+export type AdvanceInstructionDataArgs = {
+    currentNonce: Address | HasAddress;
+    transitionCommitment: Address | HasAddress;
+};
 
 export function getAdvanceInstructionDataEncoder(): FixedSizeEncoder<AdvanceInstructionDataArgs> {
     return transformEncoder(
@@ -108,14 +112,15 @@ export function getAdvanceInstruction<
     TProgramAddress extends Address = typeof NONCE_PROGRAM_ADDRESS,
 >(
     input: AdvanceInput<TAccountAuthority, TAccountNonceAccount>,
-    config?: { programAddress?: TProgramAddress },
+    config?: { programAddress?: TProgramAddress | { readonly address: TProgramAddress } },
 ): AdvanceInstruction<
     TProgramAddress,
     ResolvedInstructionAccountMeta<TAccountAuthority, InstructionAccountInputAddress<TAccountAuthority>>,
     ResolvedInstructionAccountMeta<TAccountNonceAccount, InstructionAccountInputAddress<TAccountNonceAccount>>
 > {
     // Program address.
-    const programAddress = config?.programAddress ?? NONCE_PROGRAM_ADDRESS;
+    const programAddressInput = config?.programAddress ?? NONCE_PROGRAM_ADDRESS;
+    const programAddress = typeof programAddressInput === 'string' ? programAddressInput : programAddressInput.address;
 
     // Account meta helper.
     const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');

@@ -27,13 +27,18 @@ import {
     type FixedSizeCodec,
     type FixedSizeDecoder,
     type FixedSizeEncoder,
+    type HasAddress,
     type MaybeAccount,
     type MaybeEncodedAccount,
 } from '@solana/kit';
 
 export type Nonce = { nonce: Address; authority: Address; initializeSlot: bigint };
 
-export type NonceArgs = { nonce: Address; authority: Address; initializeSlot: number | bigint };
+export type NonceArgs = {
+    nonce: Address | HasAddress;
+    authority: Address | HasAddress;
+    initializeSlot: number | bigint;
+};
 
 /** Gets the encoder for {@link NonceArgs} account data. */
 export function getNonceEncoder(): FixedSizeEncoder<NonceArgs> {
@@ -72,7 +77,7 @@ export function decodeNonce<TAddress extends string = string>(
 
 export async function fetchNonce<TAddress extends string = string>(
     rpc: Parameters<typeof fetchEncodedAccount>[0],
-    address: Address<TAddress>,
+    address: Address<TAddress> | HasAddress<TAddress>,
     config?: FetchAccountConfig,
 ): Promise<Account<Nonce, TAddress>> {
     const maybeAccount = await fetchMaybeNonce(rpc, address, config);
@@ -82,16 +87,20 @@ export async function fetchNonce<TAddress extends string = string>(
 
 export async function fetchMaybeNonce<TAddress extends string = string>(
     rpc: Parameters<typeof fetchEncodedAccount>[0],
-    address: Address<TAddress>,
+    address: Address<TAddress> | HasAddress<TAddress>,
     config?: FetchAccountConfig,
 ): Promise<MaybeAccount<Nonce, TAddress>> {
-    const maybeAccount = await fetchEncodedAccount(rpc, address, config);
+    const maybeAccount = await fetchEncodedAccount(
+        rpc,
+        typeof address === 'string' ? address : address.address,
+        config,
+    );
     return decodeNonce(maybeAccount);
 }
 
 export async function fetchAllNonce(
     rpc: Parameters<typeof fetchEncodedAccounts>[0],
-    addresses: Array<Address>,
+    addresses: Array<Address | HasAddress>,
     config?: FetchAccountsConfig,
 ): Promise<Account<Nonce>[]> {
     const maybeAccounts = await fetchAllMaybeNonce(rpc, addresses, config);
@@ -101,9 +110,13 @@ export async function fetchAllNonce(
 
 export async function fetchAllMaybeNonce(
     rpc: Parameters<typeof fetchEncodedAccounts>[0],
-    addresses: Array<Address>,
+    addresses: Array<Address | HasAddress>,
     config?: FetchAccountsConfig,
 ): Promise<MaybeAccount<Nonce>[]> {
-    const maybeAccounts = await fetchEncodedAccounts(rpc, addresses, config);
+    const maybeAccounts = await fetchEncodedAccounts(
+        rpc,
+        addresses.map(a => (typeof a === 'string' ? a : a.address)),
+        config,
+    );
     return maybeAccounts.map(maybeAccount => decodeNonce(maybeAccount));
 }

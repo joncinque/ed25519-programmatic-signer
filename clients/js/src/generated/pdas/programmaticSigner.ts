@@ -11,20 +11,23 @@ import {
     getProgramDerivedAddress,
     getUtf8Encoder,
     type Address,
+    type HasAddress,
     type ProgramDerivedAddress,
 } from '@solana/kit';
 
 export type ProgrammaticSignerSeeds = {
-    authority: Address;
+    authority: Address | HasAddress;
 };
 
 export async function findProgrammaticSignerPda(
     seeds: ProgrammaticSignerSeeds,
-    config: { programAddress?: Address | undefined } = {},
+    config: { programAddress?: Address | HasAddress | undefined } = {},
 ): Promise<ProgramDerivedAddress> {
     const {
-        programAddress = 'EdSigVfK1DkeMrjFNDMjwfQaJPhPTtX7jW8uPv3oKEgN' as Address<'EdSigVfK1DkeMrjFNDMjwfQaJPhPTtX7jW8uPv3oKEgN'>,
+        programAddress:
+            programAddressInput = 'EdSigVfK1DkeMrjFNDMjwfQaJPhPTtX7jW8uPv3oKEgN' as Address<'EdSigVfK1DkeMrjFNDMjwfQaJPhPTtX7jW8uPv3oKEgN'>,
     } = config;
+    const programAddress = typeof programAddressInput === 'string' ? programAddressInput : programAddressInput.address;
     return await getProgramDerivedAddress({
         programAddress,
         seeds: [getUtf8Encoder().encode('programmatic-signer'), getAddressEncoder().encode(seeds.authority)],

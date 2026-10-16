@@ -114,7 +114,7 @@ export function getWithdrawInstruction<
     TProgramAddress extends Address = typeof NONCE_PROGRAM_ADDRESS,
 >(
     input: WithdrawInput<TAccountAuthority, TAccountNonceAccount, TAccountDestination>,
-    config?: { programAddress?: TProgramAddress },
+    config?: { programAddress?: TProgramAddress | { readonly address: TProgramAddress } },
 ): WithdrawInstruction<
     TProgramAddress,
     ResolvedInstructionAccountMeta<TAccountAuthority, InstructionAccountInputAddress<TAccountAuthority>>,
@@ -122,7 +122,8 @@ export function getWithdrawInstruction<
     ResolvedInstructionAccountMeta<TAccountDestination, InstructionAccountInputAddress<TAccountDestination>>
 > {
     // Program address.
-    const programAddress = config?.programAddress ?? NONCE_PROGRAM_ADDRESS;
+    const programAddressInput = config?.programAddress ?? NONCE_PROGRAM_ADDRESS;
+    const programAddress = typeof programAddressInput === 'string' ? programAddressInput : programAddressInput.address;
 
     // Account meta helper.
     const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');

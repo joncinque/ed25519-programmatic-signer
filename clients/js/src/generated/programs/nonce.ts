@@ -22,6 +22,7 @@ import {
     type ExtendedClient,
     type GetAccountInfoApi,
     type GetMultipleAccountsApi,
+    type HasAddress,
     type Instruction,
     type InstructionWithData,
     type ReadonlyUint8Array,
@@ -132,24 +133,51 @@ export type NoncePlugin = {
 export type NoncePluginAccounts = { nonce: ReturnType<typeof getNonceCodec> & SelfFetchFunctions<NonceArgs, Nonce> };
 
 export type NoncePluginInstructions = {
-    initialize: (input: InitializeInput) => ReturnType<typeof getInitializeInstruction> & SelfPlanAndSendFunctions;
-    advance: (input: AdvanceInput) => ReturnType<typeof getAdvanceInstruction> & SelfPlanAndSendFunctions;
-    withdraw: (input: WithdrawInput) => ReturnType<typeof getWithdrawInstruction> & SelfPlanAndSendFunctions;
+    initialize: (
+        input: InitializeInput,
+        config?: { programAddress?: Address | HasAddress },
+    ) => ReturnType<typeof getInitializeInstruction> & SelfPlanAndSendFunctions;
+    advance: (
+        input: AdvanceInput,
+        config?: { programAddress?: Address | HasAddress },
+    ) => ReturnType<typeof getAdvanceInstruction> & SelfPlanAndSendFunctions;
+    withdraw: (
+        input: WithdrawInput,
+        config?: { programAddress?: Address | HasAddress },
+    ) => ReturnType<typeof getWithdrawInstruction> & SelfPlanAndSendFunctions;
 };
 
 export type NoncePluginRequirements = ClientWithRpc<GetAccountInfoApi & GetMultipleAccountsApi> &
     ClientWithTransactionPlanning &
     ClientWithTransactionSending;
 
-export function nonceProgram() {
+export function nonceProgram(config: { programAddress?: Address | HasAddress } = {}) {
     return <T extends NoncePluginRequirements>(client: T): ExtendedClient<T, { nonce: NoncePlugin }> => {
         return extendClient(client, {
             nonce: <NoncePlugin>{
                 accounts: { nonce: addSelfFetchFunctions(client, getNonceCodec()) },
                 instructions: {
-                    initialize: input => addSelfPlanAndSendFunctions(client, getInitializeInstruction(input)),
-                    advance: input => addSelfPlanAndSendFunctions(client, getAdvanceInstruction(input)),
-                    withdraw: input => addSelfPlanAndSendFunctions(client, getWithdrawInstruction(input)),
+                    initialize: (input, instructionConfig) =>
+                        addSelfPlanAndSendFunctions(
+                            client,
+                            getInitializeInstruction(input, {
+                                programAddress: instructionConfig?.programAddress ?? config.programAddress,
+                            }),
+                        ),
+                    advance: (input, instructionConfig) =>
+                        addSelfPlanAndSendFunctions(
+                            client,
+                            getAdvanceInstruction(input, {
+                                programAddress: instructionConfig?.programAddress ?? config.programAddress,
+                            }),
+                        ),
+                    withdraw: (input, instructionConfig) =>
+                        addSelfPlanAndSendFunctions(
+                            client,
+                            getWithdrawInstruction(input, {
+                                programAddress: instructionConfig?.programAddress ?? config.programAddress,
+                            }),
+                        ),
                 },
                 identifyAccount: identifyNonceAccount,
                 identifyInstruction: identifyNonceInstruction,

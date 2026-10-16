@@ -17,6 +17,7 @@ import {
     type ClientWithTransactionPlanning,
     type ClientWithTransactionSending,
     type ExtendedClient,
+    type HasAddress,
     type Instruction,
     type InstructionWithData,
     type ReadonlyUint8Array,
@@ -78,21 +79,37 @@ export type Ed25519SignerPlugin = {
 };
 
 export type Ed25519SignerPluginInstructions = {
-    submit: (input: SubmitInput) => ReturnType<typeof getSubmitInstruction> & SelfPlanAndSendFunctions;
+    submit: (
+        input: SubmitInput,
+        config?: { programAddress?: Address | HasAddress },
+    ) => ReturnType<typeof getSubmitInstruction> & SelfPlanAndSendFunctions;
 };
 
 export type Ed25519SignerPluginPdas = { programmaticSigner: typeof findProgrammaticSignerPda };
 
 export type Ed25519SignerPluginRequirements = ClientWithTransactionPlanning & ClientWithTransactionSending;
 
-export function ed25519SignerProgram() {
+export function ed25519SignerProgram(config: { programAddress?: Address | HasAddress } = {}) {
     return <T extends Ed25519SignerPluginRequirements>(
         client: T,
     ): ExtendedClient<T, { ed25519Signer: Ed25519SignerPlugin }> => {
         return extendClient(client, {
             ed25519Signer: <Ed25519SignerPlugin>{
-                instructions: { submit: input => addSelfPlanAndSendFunctions(client, getSubmitInstruction(input)) },
-                pdas: { programmaticSigner: findProgrammaticSignerPda },
+                instructions: {
+                    submit: (input, instructionConfig) =>
+                        addSelfPlanAndSendFunctions(
+                            client,
+                            getSubmitInstruction(input, {
+                                programAddress: instructionConfig?.programAddress ?? config.programAddress,
+                            }),
+                        ),
+                },
+                pdas: {
+                    programmaticSigner: (seeds, pdaConfig) =>
+                        findProgrammaticSignerPda(seeds, {
+                            programAddress: pdaConfig?.programAddress ?? config.programAddress,
+                        }),
+                },
                 identifyInstruction: identifyEd25519SignerInstruction,
                 parseInstruction: parseEd25519SignerInstruction,
             },

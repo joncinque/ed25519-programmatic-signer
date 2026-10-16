@@ -18,6 +18,7 @@ import {
     type ClientWithTransactionPlanning,
     type ClientWithTransactionSending,
     type ExtendedClient,
+    type HasAddress,
     type Instruction,
     type InstructionWithData,
     type ReadonlyUint8Array,
@@ -77,18 +78,29 @@ export type MessageExecutorPlugin = {
 };
 
 export type MessageExecutorPluginInstructions = {
-    execute: (input: ExecuteInput) => ReturnType<typeof getExecuteInstruction> & SelfPlanAndSendFunctions;
+    execute: (
+        input: ExecuteInput,
+        config?: { programAddress?: Address | HasAddress },
+    ) => ReturnType<typeof getExecuteInstruction> & SelfPlanAndSendFunctions;
 };
 
 export type MessageExecutorPluginRequirements = ClientWithTransactionPlanning & ClientWithTransactionSending;
 
-export function messageExecutorProgram() {
+export function messageExecutorProgram(config: { programAddress?: Address | HasAddress } = {}) {
     return <T extends MessageExecutorPluginRequirements>(
         client: T,
     ): ExtendedClient<T, { messageExecutor: MessageExecutorPlugin }> => {
         return extendClient(client, {
             messageExecutor: <MessageExecutorPlugin>{
-                instructions: { execute: input => addSelfPlanAndSendFunctions(client, getExecuteInstruction(input)) },
+                instructions: {
+                    execute: (input, instructionConfig) =>
+                        addSelfPlanAndSendFunctions(
+                            client,
+                            getExecuteInstruction(input, {
+                                programAddress: instructionConfig?.programAddress ?? config.programAddress,
+                            }),
+                        ),
+                },
                 identifyInstruction: identifyMessageExecutorInstruction,
                 parseInstruction: parseMessageExecutorInstruction,
             },

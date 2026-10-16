@@ -94,10 +94,11 @@ export type SubmitInput = {
 
 export function getSubmitInstruction<TProgramAddress extends Address = typeof ED25519_SIGNER_PROGRAM_ADDRESS>(
     input: SubmitInput,
-    config?: { programAddress?: TProgramAddress },
+    config?: { programAddress?: TProgramAddress | { readonly address: TProgramAddress } },
 ): SubmitInstruction<TProgramAddress> {
     // Program address.
-    const programAddress = config?.programAddress ?? ED25519_SIGNER_PROGRAM_ADDRESS;
+    const programAddressInput = config?.programAddress ?? ED25519_SIGNER_PROGRAM_ADDRESS;
+    const programAddress = typeof programAddressInput === 'string' ? programAddressInput : programAddressInput.address;
 
     // Original args.
     const args = { ...input };
