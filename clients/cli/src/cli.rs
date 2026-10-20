@@ -1,6 +1,9 @@
 use {
     crate::{
-        commands::{address::AddressCommand, nonce::NonceCommand, transaction::TransactionCommand},
+        commands::{
+            address::AddressCommand, migrate::MigrateCommand, nonce::NonceCommand,
+            transaction::TransactionCommand,
+        },
         output::OutputFormat,
     },
     clap::{Args, Parser, Subcommand, ValueHint, builder::ValueParser},
@@ -90,6 +93,8 @@ pub(crate) struct ClientArgs {
 pub(crate) enum Command {
     /// Derive and print a programmatic signer PDA from an authority address.
     Address(AddressCommand),
+    /// Build execution messages moving accounts to a programmatic signer.
+    Migrate(MigrateCommand),
     /// Manage SPL Nonce accounts used by programmatic signer transactions.
     Nonce(NonceCommand),
     /// Sign authorization messages offline and submit them in a relay transaction.
