@@ -1,6 +1,7 @@
 pub(crate) mod advance;
 pub(crate) mod create;
 pub(crate) mod show;
+pub(crate) mod withdraw;
 
 use {
     crate::{
@@ -33,6 +34,10 @@ pub(crate) enum NonceSubcommand {
     Create(create::CreateCommand),
     /// Advance an SPL Nonce account, invalidating anything signed against its current value.
     Advance(advance::AdvanceCommand),
+    /// Withdraw lamports from an SPL Nonce account, closing it when withdrawing the whole
+    /// balance. Signs as the nonce authority, or as the authority of a ProgrammaticSigner PDA
+    /// nonce authority.
+    Withdraw(withdraw::WithdrawCommand),
 }
 
 pub(crate) async fn run(
@@ -44,6 +49,7 @@ pub(crate) async fn run(
         NonceSubcommand::Show(command) => show::run(command, client, output).await,
         NonceSubcommand::Create(command) => create::run(command, client, output).await,
         NonceSubcommand::Advance(command) => advance::run(command, client, output).await,
+        NonceSubcommand::Withdraw(command) => withdraw::run(command, client, output).await,
     }
 }
 

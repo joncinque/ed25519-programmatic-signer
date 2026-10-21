@@ -12,6 +12,7 @@ pub use commands::{
         advance::{NonceAdvanceAuthorizationOutput, NonceAdvanceOutput},
         create::NonceCreateOutput,
         show::NonceShowOutput,
+        withdraw::{NonceWithdrawAuthorizationOutput, NonceWithdrawOutput},
     },
 };
 use {
