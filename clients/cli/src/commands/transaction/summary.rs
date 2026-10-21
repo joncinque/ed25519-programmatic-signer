@@ -16,7 +16,7 @@ use {
 /// The value the nonce account holds after the executor runs `execution_message`, whose lifetime
 /// specifier is the expected nonce. Each advance commits to the exact execution message, so the
 /// successor is known offline, and a message signed against it can only execute after this one.
-pub(super) fn next_nonce(nonce_account: &Address, execution_message: &v1::Message) -> Hash {
+pub(crate) fn next_nonce(nonce_account: &Address, execution_message: &v1::Message) -> Hash {
     Nonce {
         nonce: execution_message.lifetime_specifier,
         ..Nonce::default()

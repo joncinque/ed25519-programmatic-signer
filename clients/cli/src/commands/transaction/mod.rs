@@ -2,8 +2,8 @@ mod decode;
 mod sign;
 mod simulate;
 mod submit;
-mod summary;
-mod v1_transaction;
+pub(crate) mod summary;
+pub(crate) mod v1_transaction;
 
 use {
     crate::{client::Client, output::OutputFormat},

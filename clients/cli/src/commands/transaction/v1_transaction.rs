@@ -28,7 +28,7 @@ const LIMITS: v1::TransactionConfig = v1::TransactionConfig::empty()
     .with_loaded_accounts_data_size_limit(MAX_LOADED_ACCOUNTS_DATA_SIZE);
 
 /// Compile and validate a v1 message for `instructions`.
-pub(super) fn compile_message(
+pub(crate) fn compile_message(
     fee_payer: &Address,
     instructions: &[Instruction],
     blockhash: Hash,
@@ -49,7 +49,7 @@ pub(super) fn signer_index(transaction: &VersionedTransaction, address: &Address
 /// Sign `message_data` with each signer, leaving other signature slots unchanged. The v1 stand-in
 /// for `Transaction::try_partial_sign`. `message_data` is not checked against the transaction's
 /// message, so it must be its serialization.
-pub(super) fn try_partial_sign(
+pub(crate) fn try_partial_sign(
     transaction: &mut VersionedTransaction,
     signers: &[&dyn Signer],
     message_data: &[u8],
