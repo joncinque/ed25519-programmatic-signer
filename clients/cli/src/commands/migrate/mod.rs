@@ -1,6 +1,7 @@
 pub(crate) mod mint;
 pub(crate) mod program;
 pub(crate) mod stake;
+pub(crate) mod token;
 pub(crate) mod vote;
 
 use {
@@ -31,6 +32,9 @@ enum MigrateSubcommand {
     Program(program::ProgramCommand),
     /// Build an execution message moving a stake account's authorities to a programmatic signer.
     Stake(stake::StakeCommand),
+    /// Build an execution message moving tokens to a programmatic signer's associated token
+    /// account.
+    Token(token::TokenCommand),
     /// Build an execution message moving a vote account's withdraw authority to a programmatic
     /// signer.
     Vote(vote::VoteCommand),
@@ -45,6 +49,7 @@ pub(crate) async fn run(
         MigrateSubcommand::Mint(command) => mint::run(command, client, output).await,
         MigrateSubcommand::Program(command) => program::run(command, client, output).await,
         MigrateSubcommand::Stake(command) => stake::run(command, client, output).await,
+        MigrateSubcommand::Token(command) => token::run(command, client, output).await,
         MigrateSubcommand::Vote(command) => vote::run(command, client, output).await,
     }
 }
