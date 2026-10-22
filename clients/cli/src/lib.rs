@@ -8,7 +8,11 @@ pub use commands::{
         Authorization, RequiredSigners, mint::MintMigrationOutput, program::ProgramMigrationOutput,
         stake::StakeMigrationOutput, vote::VoteMigrationOutput,
     },
-    nonce::{create::NonceCreateOutput, show::NonceShowOutput},
+    nonce::{
+        advance::{NonceAdvanceAuthorizationOutput, NonceAdvanceOutput},
+        create::NonceCreateOutput,
+        show::NonceShowOutput,
+    },
 };
 use {
     anyhow::Result,

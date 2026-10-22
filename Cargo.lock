@@ -10340,6 +10340,7 @@ dependencies = [
  "clap 3.2.25",
  "indoc",
  "libtest-mimic",
+ "rand 0.9.4",
  "serde",
  "serde_json",
  "solana-account 4.3.2",

@@ -25,6 +25,11 @@ use {
             migrates_vote_withdrawer_held_by_identity, migrates_vote_withdrawer_to_new_owner,
             rejects_invalid_vote_migrations,
         },
+        test_nonce_advance::{
+            advances_nonce_with_cold_authority, advances_nonce_with_external_cold_authority,
+            advances_nonce_with_plain_key_authority, rejects_offline_plain_key_authority,
+            rejects_unrelated_nonce_authority,
+        },
         test_transaction_simulate::{
             prints_verbose_simulation_result, rejects_stale_nonce_hash,
             reports_failed_simulation_logs, simulates_promoted_and_forwarded_signers,
@@ -55,6 +60,7 @@ mod test_migrate_mint;
 mod test_migrate_program;
 mod test_migrate_stake;
 mod test_migrate_vote;
+mod test_nonce_advance;
 mod test_transaction_simulate;
 mod test_transaction_submit;
 
@@ -86,6 +92,15 @@ fn main() -> ExitCode {
             env,
             runtime_handle
         ),
+        async_trial!(advances_nonce_with_plain_key_authority, env, runtime_handle),
+        async_trial!(advances_nonce_with_cold_authority, env, runtime_handle),
+        async_trial!(
+            advances_nonce_with_external_cold_authority,
+            env,
+            runtime_handle
+        ),
+        async_trial!(rejects_offline_plain_key_authority, env, runtime_handle),
+        async_trial!(rejects_unrelated_nonce_authority, env, runtime_handle),
         async_trial!(
             submits_authority_signed_transfer_and_rejects_replay,
             env,
