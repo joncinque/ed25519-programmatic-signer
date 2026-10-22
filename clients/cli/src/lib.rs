@@ -6,7 +6,8 @@ mod output;
 pub use commands::{
     migrate::{
         Authorization, RequiredSigners, mint::MintMigrationOutput, program::ProgramMigrationOutput,
-        stake::StakeMigrationOutput, token::TokenMigrationOutput, vote::VoteMigrationOutput,
+        sol::SolMigrationOutput, stake::StakeMigrationOutput, token::TokenMigrationOutput,
+        vote::VoteMigrationOutput,
     },
     nonce::{
         advance::{NonceAdvanceAuthorizationOutput, NonceAdvanceOutput},
