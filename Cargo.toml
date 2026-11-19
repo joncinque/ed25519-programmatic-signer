@@ -34,56 +34,55 @@ codama-macros = "0.13.1"
 indoc = "2.0.7"
 jiff = { version = "0.2.27", default-features = false, features = ["std"] }
 libtest-mimic = "0.8.2"
-mollusk-svm = "0.15.0"
+mollusk-svm = "0.17.1"
 pinocchio = { version = "0.11.2", default-features = false }
 rand = "0.9.4"
 serde = "1.0.229"
 serde_json = "1.0.151"
-solana-account = "4.3.0"
-solana-account-decoder = "4.2.2"
-solana-account-decoder-client-types = "4.2.2"
-solana-address = "2.6.1"
-solana-clap-v3-utils = "4.2.1"
-solana-cli-config = "4.2.1"
-solana-cli-output = "4.2.2"
-solana-clock = "3.1.1"
+solana-account = "5.4.0"
+solana-account-decoder = "4.4.1"
+solana-account-decoder-client-types = "4.4.1"
+solana-address = "2.9.0"
+solana-clap-v3-utils = "4.4.1"
+solana-cli-config = "4.4.1"
+solana-cli-output = "4.4.1"
+solana-clock = "4.0.0"
 solana-commitment-config = "3.1.1"
-solana-hash = "4.4.0"
-solana-instruction = { version = "3.4.1", default-features = false }
-solana-keypair = "3.1.2"
-# 8.1 switches its wincode integration to 0.6.
-solana-loader-v3-interface = "=8.0.1"
-solana-message = { version = "4.4.1", default-features = false }
+solana-hash = "4.7.0"
+solana-instruction = { version = "4.0.0", default-features = false }
+solana-instruction-error = "3.1.0"
+solana-keypair = "4.0.1"
+solana-loader-v3-interface = "9.0.0"
+solana-message = { version = "5.1.0", default-features = false }
 solana-native-token = "3.0.0"
-solana-nonce = "3.2.0"
+solana-nonce = "3.4.0"
 solana-program-error = "3.0.1"
 solana-program-pack = "3.1.0"
-solana-remote-wallet = "4.2.1"
-solana-rent = "4.2.0"
-solana-rpc = { version = "4.2.1", features = ["agave-unstable-api"] }
-solana-rpc-client = { version = "4.2.1", default-features = false }
-solana-rpc-client-types = "4.2.1"
+solana-remote-wallet = "4.4.1"
+solana-rent = "4.5.0"
+solana-rpc = { version = "4.4.1", features = ["agave-unstable-api"] }
+solana-rpc-client = { version = "4.4.1", default-features = false }
+solana-rpc-client-types = "4.4.1"
 solana-sanitize = "3.0.1"
 solana-sdk-ids = "3.1.0"
 solana-sha256-hasher = "3.1.0"
-solana-signature = { version = "3.4.1", default-features = false }
-solana-signer = { version = "3.0.1", default-features = false }
-solana-stake-interface = "4.3.0"
-solana-system-interface = "3.2.0"
-solana-test-validator = { version = "4.2.1", features = ["agave-unstable-api"] }
-solana-transaction = { version = "4.1.3", default-features = false }
-solana-transaction-status = "4.2.2"
-solana-vote-interface = "6.0.3"
-# 1.2 switches its wincode integration to 0.6.
-solana-zero-copy = "=1.1.1"
+solana-signature = { version = "3.6.0", default-features = false }
+solana-signer = { version = "4.0.0", default-features = false }
+solana-stake-interface = "5.1.1"
+solana-system-interface = "3.3.0"
+solana-test-validator = { version = "4.4.1", features = ["agave-unstable-api"] }
+solana-transaction = { version = "5.1.0", default-features = false }
+solana-transaction-status = "4.4.1"
+solana-vote-interface = "7.4.0"
+solana-zero-copy = "1.3.0"
 spl-associated-token-account-interface = "2.0.0"
 spl-memo-interface = "2.1.0"
-spl-token-2022-interface = "3.1.1"
+spl-token-2022-interface = "3.1.2"
 spl-token-interface = "3.0.0"
 test-case = "3.3.1"
 tempfile = "3.27.0"
 tokio = "1.53.1"
-wincode = { version = "0.5.5", default-features = false }
+wincode = { version = "0.6.3", default-features = false }
 
 spl-ed25519-signer-client = { version = "0.1.0", path = "signer/client" }
 spl-ed25519-signer-interface = { version = "1.0.0", path = "signer/interface" }
@@ -91,6 +90,11 @@ spl-message-executor-client = { version = "0.1.0", path = "executor/client" }
 spl-message-executor-interface = { version = "1.0.0", path = "executor/interface" }
 spl-nonce-client = { version = "0.1.0", path = "nonce/client" }
 spl-nonce-interface = { version = "1.0.0", path = "nonce/interface" }
+
+# Use Agave's RocksDB fork
+[patch.crates-io]
+librocksdb-sys = { git = "https://github.com/anza-xyz/rust-rocksdb", rev = "4dba80dfe9434e595a971f5b2985ff9ba4fb31e7" }
+rocksdb = { git = "https://github.com/anza-xyz/rust-rocksdb", rev = "4dba80dfe9434e595a971f5b2985ff9ba4fb31e7" }
 
 [workspace.lints.rust.unexpected_cfgs]
 level = "warn"

@@ -75,10 +75,11 @@ impl SubmitTestEnv {
         padded_transfer
             .data
             .resize(padded_transfer.data.len().checked_add(padding).unwrap(), 0);
-        let execution_message = v1::Message::try_compile(
+        let execution_message = v1::Message::try_compile_with_config(
             &nonce_authority,
             &[padded_transfer, transfer(&ordinary.pubkey(), &recipient, 1)],
             Hash::new_unique(),
+            v1::TransactionConfig::empty(),
         )
         .unwrap();
         let message = build_authorization_message(
@@ -550,13 +551,14 @@ fn forwarded_authority_needs_signer_and_relay_signer_args(
     let authority = env.authority.pubkey();
     let signer = programmatic_signer(&authority);
     let recipient = Address::new_unique();
-    let execution_message = v1::Message::try_compile(
+    let execution_message = v1::Message::try_compile_with_config(
         &signer,
         &[
             transfer(&signer, &recipient, 1),
             transfer(&authority, &recipient, 1),
         ],
         Hash::new_unique(),
+        v1::TransactionConfig::empty(),
     )
     .unwrap();
     let message = build_authorization_message(
@@ -591,10 +593,11 @@ fn authority_as_execution_message_non_signer_is_not_forwarded(
     let env = SubmitTestEnv::new();
     let authority = env.authority.pubkey();
     let signer = programmatic_signer(&authority);
-    let execution_message = v1::Message::try_compile(
+    let execution_message = v1::Message::try_compile_with_config(
         &signer,
         &[transfer(&signer, &authority, 1)],
         Hash::new_unique(),
+        v1::TransactionConfig::empty(),
     )
     .unwrap();
     let message = build_authorization_message(
@@ -623,13 +626,14 @@ fn forwarded_signer_with_non_signer_derived_signer_is_not_an_authority() {
     let env = SubmitTestEnv::new();
     let ordinary = env.ordinary.pubkey();
     let signer = programmatic_signer(&env.authority.pubkey());
-    let execution_message = v1::Message::try_compile(
+    let execution_message = v1::Message::try_compile_with_config(
         &signer,
         &[
             transfer(&signer, &programmatic_signer(&ordinary), 1),
             transfer(&ordinary, &Address::new_unique(), 1),
         ],
         Hash::new_unique(),
+        v1::TransactionConfig::empty(),
     )
     .unwrap();
     let message = build_authorization_message(
@@ -662,10 +666,11 @@ fn required_relay_signer_must_approve(approval: Option<&str>) {
     let authority = env.authority.pubkey();
     let signer = programmatic_signer(&authority);
     let required_relay_signer = Keypair::new();
-    let execution_message = v1::Message::try_compile(
+    let execution_message = v1::Message::try_compile_with_config(
         &signer,
         &[transfer(&signer, &Address::new_unique(), 1)],
         Hash::new_unique(),
+        v1::TransactionConfig::empty(),
     )
     .unwrap();
     let message = VersionedMessage::V1(

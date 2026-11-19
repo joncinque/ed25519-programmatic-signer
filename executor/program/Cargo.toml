@@ -31,6 +31,7 @@ mollusk-svm = { workspace = true }
 solana-account = { workspace = true }
 solana-address = { workspace = true }
 solana-instruction = { workspace = true }
+solana-instruction-error = { workspace = true }
 solana-rent = { workspace = true }
 solana-program-error = { workspace = true }
 solana-system-interface = { workspace = true, features = ["wincode"] }

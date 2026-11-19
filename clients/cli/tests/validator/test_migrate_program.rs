@@ -91,7 +91,6 @@ pub async fn deploy_program(env: &TestEnv, upgrade_authority: &Keypair) -> Addre
             &upgrade_authority.pubkey(),
             lamports,
             PROGRAM.len(),
-            true,
         )
         .unwrap(),
         &[&program, upgrade_authority],
@@ -201,16 +200,16 @@ pub async fn migrates_program_upgrade_authority_to_new_owner(env: &TestEnv) {
     )
     .await;
     let spill = Address::new_unique();
-    let upgrade = v1::Message::try_compile(
+    let upgrade = v1::Message::try_compile_with_config(
         &new_owner_programmatic_signer,
         &[upgrade(
             &program,
             &buffer,
             &new_owner_programmatic_signer,
             &spill,
-            true,
         )],
         Hash::default(),
+        v1::TransactionConfig::empty(),
     )
     .unwrap();
     execute_as_new_owner(

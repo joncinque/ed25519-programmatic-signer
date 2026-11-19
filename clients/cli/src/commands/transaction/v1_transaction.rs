@@ -237,13 +237,8 @@ pub(super) fn return_signers_data(
         ..CliSignOnlyData::default()
     };
     let keys = transaction.message.static_account_keys();
-    for ((signature, address), valid) in transaction
-        .signatures
-        .iter()
-        .zip(keys)
-        .zip(transaction.verify_with_results())
-    {
-        if valid {
+    for (signature, address) in transaction.signatures.iter().zip(keys) {
+        if signature.verify(address.as_ref(), message_data) {
             data.signers.push(format!("{address}={signature}"));
         } else if *signature == Signature::default() {
             data.absent.push(address.to_string());

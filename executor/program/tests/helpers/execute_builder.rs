@@ -136,10 +136,11 @@ impl<'a> ExecuteBuilder<'a> {
         });
 
         let mut message = message_override.unwrap_or_else(|| {
-            v1::Message::try_compile(
+            v1::Message::try_compile_with_config(
                 payer.as_ref().unwrap_or(&authority),
                 &message_instructions,
                 recent_blockhash,
+                v1::TransactionConfig::empty(),
             )
             .unwrap()
         });

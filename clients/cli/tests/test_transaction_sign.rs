@@ -60,10 +60,11 @@ impl SignTestEnv {
             &spl_ed25519_signer_client::id(),
             &authority.pubkey(),
         );
-        let execution_message = v1::Message::try_compile(
+        let execution_message = v1::Message::try_compile_with_config(
             &pda,
             &[transfer(&pda, &Address::new_from_array([3; 32]), 1)],
             Hash::new_from_array([99; 32]),
+            v1::TransactionConfig::empty(),
         )
         .unwrap();
         Self {
@@ -525,13 +526,14 @@ fn size_test_env(authority_forwarded: bool) -> SignTestEnv {
     let mut env = SignTestEnv::new();
     if authority_forwarded {
         let pda = env.execution_message.account_keys[0];
-        env.execution_message = v1::Message::try_compile(
+        env.execution_message = v1::Message::try_compile_with_config(
             &pda,
             &[
                 transfer(&pda, &Address::new_unique(), 1),
                 transfer(&env.authority.pubkey(), &Address::new_unique(), 1),
             ],
             Hash::default(),
+            v1::TransactionConfig::empty(),
         )
         .unwrap();
         env.encoded = BASE64_STANDARD.encode(env.execution_message.serialize());
@@ -620,8 +622,13 @@ fn rejects_too_many_authorization_accounts() {
             .accounts
             .push(AccountMeta::new_readonly(Address::new_unique(), false));
     }
-    env.execution_message =
-        v1::Message::try_compile(&pda, &[instruction], Hash::default()).unwrap();
+    env.execution_message = v1::Message::try_compile_with_config(
+        &pda,
+        &[instruction],
+        Hash::default(),
+        v1::TransactionConfig::empty(),
+    )
+    .unwrap();
     assert_eq!(
         env.execution_message.account_keys.len(),
         usize::from(v1::MAX_ADDRESSES)
@@ -678,10 +685,11 @@ fn next_nonce_commits_to_execution_message() {
     let mut env = SignTestEnv::new();
     let original = env.next_nonce();
     let pda = env.nonce_authority.parse().unwrap();
-    env.execution_message = v1::Message::try_compile(
+    env.execution_message = v1::Message::try_compile_with_config(
         &pda,
         &[transfer(&pda, &Address::new_from_array([3; 32]), 2)],
         Hash::new_from_array([99; 32]),
+        v1::TransactionConfig::empty(),
     )
     .unwrap();
     env.encoded = BASE64_STANDARD.encode(env.execution_message.serialize());
@@ -857,10 +865,11 @@ fn default_display_shows_pairs_and_one_authorization_message(multiple: bool) {
 fn nonce_only_approval_includes_ordinary_execution_signers() {
     let mut env = SignTestEnv::new();
     let execution_signer = Keypair::new_from_array([7; 32]).pubkey();
-    env.execution_message = v1::Message::try_compile(
+    env.execution_message = v1::Message::try_compile_with_config(
         &execution_signer,
         &[transfer(&execution_signer, &Address::new_unique(), 1)],
         Hash::default(),
+        v1::TransactionConfig::empty(),
     )
     .unwrap();
     env.encoded = BASE64_STANDARD.encode(env.execution_message.serialize());
@@ -907,10 +916,11 @@ fn rejects_authority_without_signer_role(pda_is_account: bool) {
         Address::new_unique()
     };
     // The raw authority being an execution message signer does not qualify its derived PDA.
-    env.execution_message = v1::Message::try_compile(
+    env.execution_message = v1::Message::try_compile_with_config(
         &env.authority.pubkey(),
         &[transfer(&env.authority.pubkey(), &recipient, 1)],
         Hash::default(),
+        v1::TransactionConfig::empty(),
     )
     .unwrap();
     env.encoded = BASE64_STANDARD.encode(env.execution_message.serialize());
@@ -934,13 +944,14 @@ fn includes_ordinary_nonce_authority_once(also_execution_signer: bool) {
     env.nonce_authority = nonce_authority.to_string();
     if also_execution_signer {
         let pda = env.execution_message.account_keys[0];
-        env.execution_message = v1::Message::try_compile(
+        env.execution_message = v1::Message::try_compile_with_config(
             &pda,
             &[
                 transfer(&pda, &Address::new_unique(), 1),
                 transfer(&nonce_authority, &Address::new_unique(), 1),
             ],
             Hash::default(),
+            v1::TransactionConfig::empty(),
         )
         .unwrap();
         env.encoded = BASE64_STANDARD.encode(env.execution_message.serialize());
@@ -973,13 +984,14 @@ fn authority_used_directly_is_also_forwarded(is_nonce_authority: bool) {
     if is_nonce_authority {
         env.nonce_authority = authority.to_string();
     } else {
-        env.execution_message = v1::Message::try_compile(
+        env.execution_message = v1::Message::try_compile_with_config(
             &pda,
             &[
                 transfer(&pda, &Address::new_unique(), 1),
                 transfer(&authority, &Address::new_unique(), 1),
             ],
             Hash::default(),
+            v1::TransactionConfig::empty(),
         )
         .unwrap();
         env.encoded = BASE64_STANDARD.encode(env.execution_message.serialize());

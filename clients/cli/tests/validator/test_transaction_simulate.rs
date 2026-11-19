@@ -352,13 +352,14 @@ pub async fn reports_created_and_closed_accounts(env: &TestEnv) {
         .get_minimum_balance_for_rent_exemption(space)
         .await
         .unwrap();
-    let execution_message = v1::Message::try_compile(
+    let execution_message = v1::Message::try_compile_with_config(
         &signer,
         &[
             create_account(&signer, &created, rent, space as u64, &owner),
             transfer(&closing, &test.recipient, balance),
         ],
         test.nonce,
+        v1::TransactionConfig::empty(),
     )
     .unwrap();
 
@@ -399,7 +400,7 @@ pub async fn parses_scaled_ui_amount_token_accounts(env: &TestEnv) {
     let source = mint_tokens(env, &token_program, &mint, &signer, 1_000).await;
     let destination = mint_tokens(env, &token_program, &mint, &recipient, 0).await;
     let test = SubmitTest::new(env, &signer).await;
-    let execution_message = v1::Message::try_compile(
+    let execution_message = v1::Message::try_compile_with_config(
         &signer,
         &[spl_token_2022_interface::instruction::transfer_checked(
             &token_program,
@@ -413,6 +414,7 @@ pub async fn parses_scaled_ui_amount_token_accounts(env: &TestEnv) {
         )
         .unwrap()],
         test.nonce,
+        v1::TransactionConfig::empty(),
     )
     .unwrap();
 
@@ -445,7 +447,7 @@ pub async fn simulates_token_transfer(env: &TestEnv) {
     let (mint, source, destination) = create_token_accounts(env, &signer, &recipient).await;
     let test = SubmitTest::new(env, &signer).await;
     let amount = 1_500_000;
-    let execution_message = v1::Message::try_compile(
+    let execution_message = v1::Message::try_compile_with_config(
         &signer,
         &[transfer_checked(
             &spl_token_interface::id(),
@@ -459,6 +461,7 @@ pub async fn simulates_token_transfer(env: &TestEnv) {
         )
         .unwrap()],
         test.nonce,
+        v1::TransactionConfig::empty(),
     )
     .unwrap();
 
@@ -557,10 +560,11 @@ fn nested_execution_message(
         .chain(inner.iter().map(|test| test.nonce))
         .collect::<Vec<_>>();
     for (test, lifetime) in inner.iter().zip(lifetimes).rev() {
-        message = v1::Message::try_compile(
+        message = v1::Message::try_compile_with_config(
             signer,
             &[execute(&test.nonce_account, signer, &message)],
             lifetime,
+            v1::TransactionConfig::empty(),
         )
         .unwrap();
     }

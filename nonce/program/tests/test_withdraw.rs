@@ -313,10 +313,12 @@ fn partial_withdraw_preserves_state_in_initialization_slot(amount: u64) {
 #[test]
 fn withdraw_to_authority_is_allowed() {
     let authority = Address::from([2; 32]);
+    let amount = Rent::default().minimum_balance(0);
     WithdrawBuilder::default()
         .destination_is_authority()
-        .amount(100)
+        .excess_lamports(amount)
+        .amount(amount)
         .check(Check::success())
-        .check(Check::account(&authority).lamports(100).build())
+        .check(Check::account(&authority).lamports(amount).build())
         .execute();
 }

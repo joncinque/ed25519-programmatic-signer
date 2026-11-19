@@ -74,7 +74,13 @@ impl SubmitTest {
             .iter()
             .map(|sender| transfer(sender, &self.recipient, TRANSFER_AMOUNT))
             .collect::<Vec<_>>();
-        v1::Message::try_compile(&senders[0], &transfers, self.nonce).unwrap()
+        v1::Message::try_compile_with_config(
+            &senders[0],
+            &transfers,
+            self.nonce,
+            v1::TransactionConfig::empty(),
+        )
+        .unwrap()
     }
 
     async fn current_nonce(&self, env: &TestEnv) -> Hash {
@@ -223,6 +229,7 @@ pub(crate) async fn landed_transaction(
         encoding: Some(UiTransactionEncoding::Base64),
         commitment: Some(CommitmentConfig::confirmed()),
         max_supported_transaction_version: Some(1),
+        ..RpcTransactionConfig::default()
     };
     let mut attempts = 0..300;
     let transaction = loop {
@@ -372,13 +379,14 @@ pub async fn rejects_expired_execution_message(env: &TestEnv) {
     fund(env, &[signer]).await;
     let test = SubmitTest::new(env, &signer).await;
     let authorize = |last_valid_slot| {
-        let execution_message = v1::Message::try_compile(
+        let execution_message = v1::Message::try_compile_with_config(
             &signer,
             &[
                 lighthouse::assert_slot_at_most(last_valid_slot),
                 transfer(&signer, &test.recipient, TRANSFER_AMOUNT),
             ],
             test.nonce,
+            v1::TransactionConfig::empty(),
         )
         .unwrap();
         let message = build_authorization_message(
@@ -689,13 +697,14 @@ pub async fn submits_with_authority_as_execution_message_non_signer(env: &TestEn
     fund(env, &[signer]).await;
     let test = SubmitTest::new(env, &signer).await;
     // The authority's own address only receives a transfer, so it is not forwarded.
-    let execution_message = v1::Message::try_compile(
+    let execution_message = v1::Message::try_compile_with_config(
         &signer,
         &[
             transfer(&signer, &test.recipient, TRANSFER_AMOUNT),
             transfer(&signer, &authority.pubkey(), TRANSFER_AMOUNT),
         ],
         test.nonce,
+        v1::TransactionConfig::empty(),
     )
     .unwrap();
     let message = build_authorization_message(
@@ -1065,7 +1074,13 @@ pub async fn rejects_nonce_chain_skips_through_submit(env: &TestEnv) {
         chain.nonce,
         commitment,
     );
-    let message = v1::Message::try_compile(&signer, &[attack], attack_nonce.nonce).unwrap();
+    let message = v1::Message::try_compile_with_config(
+        &signer,
+        &[attack],
+        attack_nonce.nonce,
+        v1::TransactionConfig::empty(),
+    )
+    .unwrap();
     let transaction = signed_submit_transaction(env, &attack_nonce, &authority, &message).await;
     env.rpc
         .send_and_confirm_transaction(&transaction)

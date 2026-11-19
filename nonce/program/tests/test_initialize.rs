@@ -143,7 +143,7 @@ fn initialize_writes_expected_state() {
         .execute();
     let state = decode_state(result.get_account(&nonce_account_address).unwrap());
 
-    let slot_hash = init_mollusk().sysvars.slot_hashes.first().unwrap().1;
+    let slot_hash = init_mollusk().sysvars.slot_hashes.first().unwrap().hash;
     let program_id = spl_nonce_interface::id().to_bytes();
     let nonce_account_address = nonce_account_address.to_bytes();
     let slot_hash = slot_hash.to_bytes();
@@ -172,7 +172,7 @@ fn create_account_creates_and_initializes_nonce_account() {
         .lamports(rent_lamports)
         .initialized(
             authority_address,
-            &mollusk.sysvars.slot_hashes.first().unwrap().1,
+            &mollusk.sysvars.slot_hashes.first().unwrap().hash,
             mollusk.sysvars.clock.slot,
         )
         .build()

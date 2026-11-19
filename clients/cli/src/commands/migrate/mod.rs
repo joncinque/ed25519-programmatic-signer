@@ -103,9 +103,13 @@ fn execution_message(
     instructions: &[Instruction],
 ) -> Result<v1::Message> {
     // `transaction sign` replaces the blockhash with the SPL nonce value.
-    let message =
-        v1::Message::try_compile(new_owner_programmatic_signer, instructions, Hash::default())
-            .context("failed to compile execution message")?;
+    let message = v1::Message::try_compile_with_config(
+        new_owner_programmatic_signer,
+        instructions,
+        Hash::default(),
+        v1::TransactionConfig::empty(),
+    )
+    .context("failed to compile execution message")?;
     message.validate().context("invalid execution message")?;
     Ok(message)
 }

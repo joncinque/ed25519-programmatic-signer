@@ -136,7 +136,7 @@ pub async fn migrates_vote_withdrawer_to_new_owner(env: &TestEnv) {
 
     // The programmatic signer can now withdraw, with no forwarded signers.
     let recipient = Address::new_unique();
-    let withdraw = v1::Message::try_compile(
+    let withdraw = v1::Message::try_compile_with_config(
         &new_owner_programmatic_signer,
         &[withdraw(
             &vote,
@@ -145,6 +145,7 @@ pub async fn migrates_vote_withdrawer_to_new_owner(env: &TestEnv) {
             &recipient,
         )],
         Hash::default(),
+        v1::TransactionConfig::empty(),
     )
     .unwrap();
     execute_as_new_owner(
@@ -245,7 +246,7 @@ pub async fn simulates_vote_voter_change(env: &TestEnv) {
     let new_voter = Address::new_unique();
     let vote = create_vote_account(env, &identity, &withdrawer.pubkey()).await;
     let nonce_account = create_nonce(env, &withdrawer.pubkey());
-    let execution_message = v1::Message::try_compile(
+    let execution_message = v1::Message::try_compile_with_config(
         &withdrawer.pubkey(),
         &[authorize(
             &vote,
@@ -254,6 +255,7 @@ pub async fn simulates_vote_voter_change(env: &TestEnv) {
             VoteAuthorize::Voter,
         )],
         Hash::default(),
+        v1::TransactionConfig::empty(),
     )
     .unwrap();
 
@@ -308,7 +310,7 @@ pub async fn simulates_vote_identity_change(env: &TestEnv) {
     let new_identity = Address::new_unique();
     let vote = create_vote_account(env, &identity, &withdrawer.pubkey()).await;
     let nonce_account = create_nonce(env, &withdrawer.pubkey());
-    let execution_message = v1::Message::try_compile(
+    let execution_message = v1::Message::try_compile_with_config(
         &withdrawer.pubkey(),
         &[update_validator_identity(
             &vote,
@@ -316,6 +318,7 @@ pub async fn simulates_vote_identity_change(env: &TestEnv) {
             &new_identity,
         )],
         Hash::default(),
+        v1::TransactionConfig::empty(),
     )
     .unwrap();
 

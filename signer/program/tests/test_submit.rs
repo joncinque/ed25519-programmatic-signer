@@ -8,7 +8,8 @@ use {
     solana_account::Account,
     solana_address::Address,
     solana_hash::Hash,
-    solana_instruction::{AccountMeta, error::InstructionError},
+    solana_instruction::AccountMeta,
+    solana_instruction_error::InstructionError,
     solana_keypair::Keypair,
     solana_message::{
         MessageHeader, VersionedMessage, compiled_instruction::CompiledInstruction, legacy, v0, v1,

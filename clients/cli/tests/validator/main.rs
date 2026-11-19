@@ -364,5 +364,8 @@ fn main() -> ExitCode {
         async_trial!(dry_run_reports_failed_simulation, env, runtime_handle),
         async_trial!(dry_run_requires_authority_signatures, env, runtime_handle),
     ];
-    libtest_mimic::run(&arguments, tests).exit_code()
+    let exit_code = libtest_mimic::run(&arguments, tests).exit_code();
+    // Agave's validator shutdown calls Handle::current(), which panics outside a Tokio context.
+    runtime.block_on(async { drop(env) });
+    exit_code
 }

@@ -422,15 +422,13 @@ pub(super) async fn run(
         });
     }
     // Every signature must be present before submitting.
-    if let Some(index) = transaction
-        .verify_with_results()
+    if let Some((_, address)) = transaction
+        .signatures
         .iter()
-        .position(|valid| !valid)
+        .zip(transaction.message.static_account_keys())
+        .find(|(signature, address)| !signature.verify(address.as_ref(), &message_data))
     {
-        bail!(
-            "relay transaction is missing a valid signature for {}",
-            transaction.message.static_account_keys()[index]
-        );
+        bail!("relay transaction is missing a valid signature for {address}");
     }
     // A failed submission leaves the nonce unchanged. The error may also be a timeout or RPC
     // error after the transaction landed, so the hint does not assume it failed.

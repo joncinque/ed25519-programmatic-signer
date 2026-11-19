@@ -2,7 +2,9 @@ extern crate alloc;
 
 use {
     crate::helpers::{
-        common::{decode_state, init_mollusk, initialize_nonce_account},
+        common::{
+            decode_state, init_mollusk, initialize_nonce_account, rent_exempt_system_account,
+        },
         execute_builder::{DEFAULT_AUTHORITY, ExecuteBuilder},
         nonce_account_builder::NonceAccountBuilder,
     },
@@ -10,7 +12,8 @@ use {
     solana_account::Account,
     solana_address::Address,
     solana_hash::Hash,
-    solana_instruction::{AccountMeta, error::InstructionError},
+    solana_instruction::AccountMeta,
+    solana_instruction_error::InstructionError,
     solana_message::{
         MessageHeader, VersionedMessage, compiled_instruction::CompiledInstruction, legacy, v0, v1,
     },
@@ -170,10 +173,11 @@ fn nonce_authority_cannot_unlock_successor_without_executing_predecessor() {
     let mollusk = init_mollusk();
     let (nonce_address, nonce_account) = initialize_nonce_account(&mollusk, &DEFAULT_AUTHORITY);
     let initial_state = decode_state(&nonce_account);
-    let predecessor = v1::Message::try_compile(
+    let predecessor = v1::Message::try_compile_with_config(
         &DEFAULT_AUTHORITY,
         &[transfer(&DEFAULT_AUTHORITY, &Address::new_unique(), 1)],
         initial_state.nonce,
+        v1::TransactionConfig::empty(),
     )
     .unwrap();
     let commitment = derive_transition_commitment(&VersionedMessage::V1(predecessor));
@@ -231,10 +235,11 @@ fn execute_supports_precomputed_nonce_chain() {
     let initial_state = decode_state(&nonce_account);
 
     let first_recipient = Address::new_unique();
-    let first_message = v1::Message::try_compile(
+    let first_message = v1::Message::try_compile_with_config(
         &DEFAULT_AUTHORITY,
         &[transfer(&DEFAULT_AUTHORITY, &first_recipient, 1)],
         initial_state.nonce,
+        v1::TransactionConfig::empty(),
     )
     .unwrap();
     let first_nonce = initial_state.derive_next_nonce(
@@ -245,10 +250,11 @@ fn execute_supports_precomputed_nonce_chain() {
     );
 
     let second_recipient = Address::new_unique();
-    let second_message = v1::Message::try_compile(
+    let second_message = v1::Message::try_compile_with_config(
         &DEFAULT_AUTHORITY,
         &[transfer(&DEFAULT_AUTHORITY, &second_recipient, 1)],
         first_nonce,
+        v1::TransactionConfig::empty(),
     )
     .unwrap();
     let second_nonce = Nonce {
@@ -266,12 +272,14 @@ fn execute_supports_precomputed_nonce_chain() {
     let first = ExecuteBuilder::new(mollusk)
         .nonce_account(nonce_address, nonce_account)
         .message(first_message)
+        .account(first_recipient, rent_exempt_system_account(0))
         .execute();
     assert_eq!(decode_state(&first.nonce_account).nonce, first_nonce);
 
     let second = ExecuteBuilder::default()
         .nonce_account(nonce_address, first.nonce_account)
         .message(second_message)
+        .account(second_recipient, rent_exempt_system_account(0))
         .execute();
     assert_eq!(decode_state(&second.nonce_account).nonce, second_nonce);
 }
@@ -282,10 +290,11 @@ fn tampered_message_invalidates_precomputed_successor() {
     let (nonce_address, nonce_account) = initialize_nonce_account(&mollusk, &DEFAULT_AUTHORITY);
     let initial_state = decode_state(&nonce_account);
 
-    let planned_message = v1::Message::try_compile(
+    let planned_message = v1::Message::try_compile_with_config(
         &DEFAULT_AUTHORITY,
         &[transfer(&DEFAULT_AUTHORITY, &Address::new_unique(), 1)],
         initial_state.nonce,
+        v1::TransactionConfig::empty(),
     )
     .unwrap();
     let planned_successor = initial_state.derive_next_nonce(
@@ -295,15 +304,18 @@ fn tampered_message_invalidates_precomputed_successor() {
         &derive_transition_commitment(&VersionedMessage::V1(planned_message.clone())),
     );
 
-    let tampered_message = v1::Message::try_compile(
+    let tampered_recipient = Address::new_unique();
+    let tampered_message = v1::Message::try_compile_with_config(
         &DEFAULT_AUTHORITY,
-        &[transfer(&DEFAULT_AUTHORITY, &Address::new_unique(), 2)],
+        &[transfer(&DEFAULT_AUTHORITY, &tampered_recipient, 2)],
         initial_state.nonce,
+        v1::TransactionConfig::empty(),
     )
     .unwrap();
     let tampered = ExecuteBuilder::new(mollusk)
         .nonce_account(nonce_address, nonce_account)
         .message(tampered_message)
+        .account(tampered_recipient, rent_exempt_system_account(0))
         .execute();
     assert_ne!(
         decode_state(&tampered.nonce_account).nonce,
@@ -512,7 +524,7 @@ fn execute_downgrades_extra_signer_privilege_for_message_cpi() {
         .mutate_execute_ix(|ix| ix.accounts[5].is_signer = true)
         .account(
             source,
-            Account::new(1, 0, &solana_system_interface::program::id()),
+            Account::empty(1, &solana_system_interface::program::id()),
         )
         .check_err(ProgramError::MissingRequiredSignature)
         .execute();
@@ -631,14 +643,22 @@ fn execute_batches_instructions_from_multiple_signers() {
     let result = ExecuteBuilder::default()
         .message_instruction(transfer(&DEFAULT_AUTHORITY, &first_recipient, 100))
         .message_instruction(transfer(&second_signer, &second_recipient, 200))
+        .account(first_recipient, rent_exempt_system_account(0))
+        .account(second_recipient, rent_exempt_system_account(0))
         .account(
             second_signer,
-            Account::new(1_000_000, 0, &solana_system_interface::program::id()),
+            Account::empty(1_000_000, &solana_system_interface::program::id()),
         )
         .execute();
 
-    assert_eq!(result.account(&first_recipient).unwrap().lamports, 100);
-    assert_eq!(result.account(&second_recipient).unwrap().lamports, 200);
+    assert_eq!(
+        result.account(&first_recipient).unwrap().lamports,
+        rent_exempt_system_account(100).lamports
+    );
+    assert_eq!(
+        result.account(&second_recipient).unwrap().lamports,
+        rent_exempt_system_account(200).lamports
+    );
 }
 
 #[test]
@@ -657,13 +677,14 @@ fn execute_accepts_nonce_authority_absent_from_message() {
     let result = ExecuteBuilder::default()
         .payer(source)
         .message_instruction(transfer(&source, &recipient, 1))
-        .account(
-            source,
-            Account::new(10, 0, &solana_system_interface::program::id()),
-        )
+        .account(source, rent_exempt_system_account(10))
+        .account(recipient, rent_exempt_system_account(0))
         .execute();
     assert!(!result.message.account_keys.contains(&DEFAULT_AUTHORITY));
-    assert_eq!(result.account(&recipient).unwrap().lamports, 1);
+    assert_eq!(
+        result.account(&recipient).unwrap().lamports,
+        rent_exempt_system_account(1).lamports
+    );
     assert_ne!(
         decode_state(&result.nonce_account).nonce,
         result.message.lifetime_specifier
@@ -676,10 +697,7 @@ fn execute_accepts_nonce_authority_as_message_nonsigner() {
     let result = ExecuteBuilder::default()
         .payer(source)
         .message_instruction(transfer(&source, &DEFAULT_AUTHORITY, 1))
-        .account(
-            source,
-            Account::new(10, 0, &solana_system_interface::program::id()),
-        )
+        .account(source, rent_exempt_system_account(10))
         .execute();
     let authority_index = result
         .message

@@ -165,8 +165,13 @@ pub(super) async fn run(
         // withdrawal. The executor protects it with this nonce account, so advances it first.
         let withdraw =
             spl_nonce_client::instruction::withdraw(&pda, &nonce_account, &destination, lamports);
-        let execution_message = v1::Message::try_compile(&pda, &[withdraw], previous.nonce)
-            .context("failed to compile execution message")?;
+        let execution_message = v1::Message::try_compile_with_config(
+            &pda,
+            &[withdraw],
+            previous.nonce,
+            v1::TransactionConfig::empty(),
+        )
+        .context("failed to compile execution message")?;
         execution_message
             .validate()
             .context("invalid execution message")?;

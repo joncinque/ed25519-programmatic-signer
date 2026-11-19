@@ -646,7 +646,7 @@ pub async fn rejects_invalid_token_sources(env: &TestEnv) {
         1_000,
     )
     .await;
-    let reassign = v1::Message::try_compile(
+    let reassign = v1::Message::try_compile_with_config(
         &new_owner_programmatic_signer,
         &[set_authority(
             &token_program,
@@ -658,6 +658,7 @@ pub async fn rejects_invalid_token_sources(env: &TestEnv) {
         )
         .unwrap()],
         Hash::default(),
+        v1::TransactionConfig::empty(),
     )
     .unwrap();
     let nonce_account = create_nonce(env, &new_owner.pubkey());
@@ -917,7 +918,7 @@ pub async fn migrates_tokens_past_reassigned_destination(env: &TestEnv) {
         0,
     )
     .await;
-    let reassign = v1::Message::try_compile(
+    let reassign = v1::Message::try_compile_with_config(
         &new_owner_programmatic_signer,
         &[set_authority(
             &token_program,
@@ -929,6 +930,7 @@ pub async fn migrates_tokens_past_reassigned_destination(env: &TestEnv) {
         )
         .unwrap()],
         Hash::default(),
+        v1::TransactionConfig::empty(),
     )
     .unwrap();
     let nonce_account = create_nonce(env, &new_owner.pubkey());
