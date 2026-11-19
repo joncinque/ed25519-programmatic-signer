@@ -4,6 +4,7 @@ pub(crate) mod scan;
 pub(crate) mod sol;
 pub(crate) mod stake;
 pub(crate) mod token;
+pub(crate) mod token_account;
 pub(crate) mod vote;
 
 use {
@@ -47,6 +48,9 @@ enum MigrateSubcommand {
     /// Build an execution message moving tokens to a programmatic signer's associated token
     /// account.
     Token(token::TokenCommand),
+    /// Build an execution message moving a token account's owner and close authority to a
+    /// programmatic signer, leaving its tokens in place.
+    TokenAccount(token_account::TokenAccountCommand),
     /// Build an execution message moving a vote account's withdraw authority to a programmatic
     /// signer.
     Vote(vote::VoteCommand),
@@ -64,6 +68,9 @@ pub(crate) async fn run(
         MigrateSubcommand::Sol(command) => sol::run(command, client, output).await,
         MigrateSubcommand::Stake(command) => stake::run(command, client, output).await,
         MigrateSubcommand::Token(command) => token::run(command, client, output).await,
+        MigrateSubcommand::TokenAccount(command) => {
+            token_account::run(command, client, output).await
+        }
         MigrateSubcommand::Vote(command) => vote::run(command, client, output).await,
     }
 }

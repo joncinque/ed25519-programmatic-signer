@@ -9,6 +9,7 @@ use {
         test_migrate_program::deploy_program,
         test_migrate_stake::{STAKE_LAMPORTS, create_stake_account},
         test_migrate_token::{self, mint_to_new_account, mint_tokens},
+        test_migrate_token_account::create_token_account,
         test_migrate_vote::create_vote_account,
     },
     solana_address::Address,
@@ -19,6 +20,10 @@ use {
     solana_stake_interface::state::{Authorized, Lockup},
     solana_system_interface::instruction::transfer,
     spl_programmatic_signer_cli::ScanOutput,
+    spl_token_2022_interface::{
+        extension::ExtensionType,
+        instruction::{AuthorityType, set_authority},
+    },
 };
 
 /// Run `migrate scan <owner> [extra]` and parse its JSON output.
@@ -99,6 +104,32 @@ pub async fn scans_owner_for_migrations(env: &TestEnv) {
     let held_2022_account =
         mint_tokens(env, &token_2022, &held_2022_mint, &owner.pubkey(), 5).await;
     let other_account = mint_to_new_account(env, &token, &held_mint, &owner.pubkey(), 1_000).await;
+    // Someone else's close authority leaves only the owner to move.
+    let closable_account = mint_to_new_account(env, &token, &held_mint, &owner.pubkey(), 300).await;
+    send(
+        env,
+        &[set_authority(
+            &token,
+            &closable_account,
+            Some(&other.pubkey()),
+            AuthorityType::CloseAccount,
+            &owner.pubkey(),
+            &[],
+        )
+        .unwrap()],
+        &[&owner],
+    )
+    .await;
+    // An immutable owner can't change, so only its tokens can move.
+    let immutable_account = create_token_account(
+        env,
+        &token_2022,
+        &held_2022_mint,
+        &owner.pubkey(),
+        &[ExtensionType::ImmutableOwner],
+        7,
+    )
+    .await;
     // An empty account is listed, since `migrate token` closes it.
     let empty_mint = test_migrate_token::create_mint(env, &token, &[]).await;
     let empty_account = mint_tokens(env, &token, &empty_mint, &owner.pubkey(), 0).await;
@@ -239,6 +270,7 @@ pub async fn scans_owner_for_migrations(env: &TestEnv) {
                 item.amount.clone(),
                 item.associated,
                 item.command.clone(),
+                item.reassign_command.clone(),
             )
         })
         .collect::<Vec<_>>();
@@ -253,6 +285,7 @@ pub async fn scans_owner_for_migrations(env: &TestEnv) {
             command(&format!(
                 "token {held_mint} --owner {owner_arg} --new-authority-signing-pubkey {new_owner}"
             )),
+            None,
         ),
         (
             held_2022_account.to_string(),
@@ -264,6 +297,7 @@ pub async fn scans_owner_for_migrations(env: &TestEnv) {
                 "token {held_2022_mint} --owner {owner_arg} --new-authority-signing-pubkey \
                  {new_owner}"
             )),
+            None,
         ),
         (
             other_account.to_string(),
@@ -275,6 +309,36 @@ pub async fn scans_owner_for_migrations(env: &TestEnv) {
                 "token {held_mint} --source {other_account} --new-authority-signing-pubkey \
                  {new_owner}"
             )),
+            Some(command(&format!(
+                "token-account {other_account} --new-authority-signing-pubkey {new_owner}"
+            ))),
+        ),
+        (
+            closable_account.to_string(),
+            held_mint.to_string(),
+            token.to_string(),
+            "3".to_string(),
+            false,
+            command(&format!(
+                "token {held_mint} --source {closable_account} --new-authority-signing-pubkey \
+                 {new_owner}"
+            )),
+            Some(command(&format!(
+                "token-account {closable_account} --new-authority-signing-pubkey {new_owner} \
+                 --authority-type owner"
+            ))),
+        ),
+        (
+            immutable_account.to_string(),
+            held_2022_mint.to_string(),
+            token_2022.to_string(),
+            "0.07".to_string(),
+            false,
+            command(&format!(
+                "token {held_2022_mint} --source {immutable_account} \
+                 --new-authority-signing-pubkey {new_owner}"
+            )),
+            None,
         ),
         (
             empty_account.to_string(),
@@ -285,6 +349,7 @@ pub async fn scans_owner_for_migrations(env: &TestEnv) {
             command(&format!(
                 "token {empty_mint} --owner {owner_arg} --new-authority-signing-pubkey {new_owner}"
             )),
+            None,
         ),
     ];
     expected_tokens.sort();
@@ -331,7 +396,7 @@ pub async fn scans_owner_for_migrations(env: &TestEnv) {
         "{display}"
     );
     assert!(display.contains("Mints (4):"), "{display}");
-    assert!(display.contains("Token accounts (4):"), "{display}");
+    assert!(display.contains("Token accounts (6):"), "{display}");
     assert!(!display.contains("Not scanned"), "{display}");
 
     // Each item is listed under its heading, followed by details such as its command.
@@ -373,6 +438,16 @@ pub async fn scans_owner_for_migrations(env: &TestEnv) {
         format!(
             "    {}",
             command(&format!("token {held_mint} --source {other_account}"))
+        ),
+    );
+    assert_eq!(
+        following(&format!(
+            "    {}",
+            command(&format!("token {held_mint} --source {other_account}"))
+        )),
+        format!(
+            "    Or keep the tokens in place: {}",
+            command(&format!("token-account {other_account}"))
         ),
     );
 

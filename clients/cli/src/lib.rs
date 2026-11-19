@@ -15,6 +15,7 @@ pub use commands::{
         sol::SolMigrationOutput,
         stake::StakeMigrationOutput,
         token::TokenMigrationOutput,
+        token_account::TokenAccountMigrationOutput,
         vote::VoteMigrationOutput,
     },
     nonce::{

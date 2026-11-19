@@ -1,6 +1,6 @@
 use {
     super::{
-        mint::AuthorityType, new_owner_programmatic_signer, stake::role_name,
+        mint::AuthorityType, new_owner_programmatic_signer, stake::role_name, token_account,
         vote::authorized_withdrawer,
     },
     crate::{
@@ -13,7 +13,10 @@ use {
     anyhow::{Context, Result, ensure},
     clap::Args,
     serde::{Deserialize, Serialize},
-    solana_account_decoder_client_types::{UiDataSliceConfig, token::real_number_string_trimmed},
+    solana_account_decoder_client_types::{
+        UiDataSliceConfig,
+        token::{UiExtension, real_number_string_trimmed},
+    },
     solana_address::Address,
     solana_loader_v3_interface::state::UpgradeableLoaderState,
     solana_native_token::Sol,
@@ -393,6 +396,27 @@ async fn scan_token(
             } else {
                 ["--source", &address_arg]
             };
+            // Any other token account can instead keep its tokens and change owner, unless its
+            // owner is immutable. Moving the owner of an associated token account needs
+            // --allow-ata, which is left to the user.
+            let reassign_command = (!associated
+                && !account.extensions.contains(&UiExtension::ImmutableOwner))
+            .then(|| {
+                let mut args = vec!["token-account", &address_arg];
+                args.extend(new_authority_args);
+                // Add --authority-type owner if there's a close authority different to the owner, to leave close authority unchanged
+                if account
+                    .close_authority
+                    .as_ref()
+                    .is_some_and(|close_authority| *close_authority != owner_arg)
+                {
+                    args.extend([
+                        "--authority-type",
+                        token_account::AuthorityType::Owner.name(),
+                    ]);
+                }
+                migrate_command(&args)
+            });
             items.push(TokenScanItem {
                 command: migrate_command(
                     &[
@@ -402,6 +426,7 @@ async fn scan_token(
                     ]
                     .concat(),
                 ),
+                reassign_command,
                 token_account: address.to_string(),
                 mint: account.mint,
                 token_program: token_program.to_string(),
@@ -578,7 +603,13 @@ pub struct TokenScanItem {
     /// Whether this is the owner's associated token account. The command passes any other token
     /// account as `--source`.
     pub associated: bool,
+    /// Moves the tokens to the new authority's associated token account.
     pub command: String,
+    /// Moves the token account's owner instead, leaving the tokens in place. Set for token
+    /// accounts other than the owner's associated token account, unless their owner is
+    /// immutable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reassign_command: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -658,6 +689,9 @@ impl fmt::Display for ScanOutput {
                     )?;
                 }
                 writeln!(out, "    {}", item.command)?;
+                if let Some(reassign_command) = &item.reassign_command {
+                    writeln!(out, "    Or keep the tokens in place: {reassign_command}")?;
+                }
             }
         }
         if let Ok(sol) = &self.sol {

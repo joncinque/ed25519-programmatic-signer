@@ -38,6 +38,11 @@ use {
             rejects_invalid_token_sources, rejects_unsupported_token_2022_migrations,
             warns_of_scheduled_token_transfer_fee,
         },
+        test_migrate_token_account::{
+            migrates_associated_token_account_with_allow_ata, migrates_token_2022_account,
+            migrates_token_account, migrates_token_account_authorities_one_at_a_time,
+            migrates_wrapped_sol_token_account, rejects_invalid_token_account_migrations,
+        },
         test_migrate_vote::{
             migrates_vote_withdrawer_between_programmatic_signers,
             migrates_vote_withdrawer_held_by_identity, migrates_vote_withdrawer_to_new_owner,
@@ -97,6 +102,7 @@ mod test_migrate_scan;
 mod test_migrate_sol;
 mod test_migrate_stake;
 mod test_migrate_token;
+mod test_migrate_token_account;
 mod test_migrate_vote;
 mod test_nonce_advance;
 mod test_nonce_withdraw;
@@ -332,6 +338,24 @@ fn main() -> ExitCode {
         async_trial!(rejects_invalid_token_migrations, env, runtime_handle),
         async_trial!(
             rejects_unsupported_token_2022_migrations,
+            env,
+            runtime_handle
+        ),
+        async_trial!(migrates_token_account, env, runtime_handle),
+        async_trial!(migrates_token_2022_account, env, runtime_handle),
+        async_trial!(
+            migrates_token_account_authorities_one_at_a_time,
+            env,
+            runtime_handle
+        ),
+        async_trial!(
+            migrates_associated_token_account_with_allow_ata,
+            env,
+            runtime_handle
+        ),
+        async_trial!(migrates_wrapped_sol_token_account, env, runtime_handle),
+        async_trial!(
+            rejects_invalid_token_account_migrations,
             env,
             runtime_handle
         ),
