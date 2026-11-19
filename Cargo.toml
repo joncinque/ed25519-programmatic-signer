@@ -85,7 +85,7 @@ tokio = "1.54.1"
 wincode = { version = "0.6.3", default-features = false }
 
 spl-ed25519-signer-client = { version = "0.1.0", path = "signer/client" }
-spl-ed25519-signer-interface = { version = "1.0.0", path = "signer/interface" }
+spl-ed25519-signer-interface = { version = "2.0.0", path = "signer/interface" }
 spl-message-executor-client = { version = "0.1.0", path = "executor/client" }
 spl-message-executor-interface = { version = "2.0.0", path = "executor/interface" }
 spl-nonce-client = { version = "0.1.0", path = "nonce/client" }

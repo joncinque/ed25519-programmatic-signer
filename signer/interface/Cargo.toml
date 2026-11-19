@@ -1,6 +1,6 @@
 [package]
 name = "spl-ed25519-signer-interface"
-version = "1.0.0"
+version = "2.0.0"
 description = "Interface for the SPL Ed25519 Signer program"
 authors = { workspace = true }
 repository = { workspace = true }
