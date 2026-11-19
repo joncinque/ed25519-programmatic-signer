@@ -1,6 +1,6 @@
 [package]
 name = "spl-programmatic-signer-cli"
-version = "0.1.0"
+version = "1.0.0"
 description = "Command-line setup client for SPL programmatic signers"
 authors = { workspace = true }
 repository = { workspace = true }
