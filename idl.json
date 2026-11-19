@@ -206,7 +206,7 @@
       "kind": "programNode",
       "name": "messageExecutor",
       "publicKey": "ExecxgyHYsAXB4c5dZodV1zJZ9hqfsDCYkRDRATrpkFR",
-      "version": "1.0.0",
+      "version": "2.0.0",
       "instructions": [
         {
           "kind": "instructionNode",

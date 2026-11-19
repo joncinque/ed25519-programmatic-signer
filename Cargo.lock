@@ -10255,7 +10255,7 @@ dependencies = [
 
 [[package]]
 name = "spl-message-executor-interface"
-version = "1.0.0"
+version = "2.0.0"
 dependencies = [
  "codama-macros",
  "solana-address 2.9.0",
