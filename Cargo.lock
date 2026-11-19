@@ -10292,7 +10292,7 @@ dependencies = [
 
 [[package]]
 name = "spl-nonce-client"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "pinocchio",
  "solana-address 2.9.0",

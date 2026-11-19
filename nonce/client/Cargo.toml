@@ -1,6 +1,6 @@
 [package]
 name = "spl-nonce-client"
-version = "0.1.0"
+version = "1.0.0"
 description = "Off-chain client helpers for the SPL Nonce program"
 authors = { workspace = true }
 repository = { workspace = true }
