@@ -89,7 +89,7 @@ spl-ed25519-signer-interface = { version = "1.0.0", path = "signer/interface" }
 spl-message-executor-client = { version = "0.1.0", path = "executor/client" }
 spl-message-executor-interface = { version = "1.0.0", path = "executor/interface" }
 spl-nonce-client = { version = "0.1.0", path = "nonce/client" }
-spl-nonce-interface = { version = "1.0.0", path = "nonce/interface" }
+spl-nonce-interface = { version = "2.0.0", path = "nonce/interface" }
 
 # Use Agave's RocksDB fork
 [patch.crates-io]
