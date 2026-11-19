@@ -10244,7 +10244,7 @@ dependencies = [
 
 [[package]]
 name = "spl-message-executor-client"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "solana-address 2.9.0",
  "solana-instruction 4.0.0",
