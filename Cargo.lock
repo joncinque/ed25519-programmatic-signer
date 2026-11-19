@@ -10171,7 +10171,7 @@ dependencies = [
 
 [[package]]
 name = "spl-ed25519-signer-client"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "solana-address 2.9.0",
  "solana-hash",
