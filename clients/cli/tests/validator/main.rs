@@ -23,8 +23,10 @@ use {
         },
         test_migrate_stake::{
             dry_runs_stake_migration, migrates_stake_authorities_one_at_a_time,
-            migrates_stake_between_programmatic_signers, migrates_stake_to_new_owner,
-            migrates_stake_with_lockup_custodian, rejects_invalid_stake_migrations,
+            migrates_stake_between_programmatic_signers,
+            migrates_stake_lockup_custodian_of_old_key, migrates_stake_lockup_custodian_on_its_own,
+            migrates_stake_to_new_owner, migrates_stake_with_lockup_custodian,
+            rejects_invalid_stake_migrations,
         },
         test_migrate_token::{
             migrates_token_2022_balance, migrates_token_2022_balance_from_source,
@@ -258,6 +260,16 @@ fn main() -> ExitCode {
             runtime_handle
         ),
         async_trial!(migrates_stake_with_lockup_custodian, env, runtime_handle),
+        async_trial!(
+            migrates_stake_lockup_custodian_of_old_key,
+            env,
+            runtime_handle
+        ),
+        async_trial!(
+            migrates_stake_lockup_custodian_on_its_own,
+            env,
+            runtime_handle
+        ),
         async_trial!(rejects_invalid_stake_migrations, env, runtime_handle),
         async_trial!(migrates_vote_withdrawer_to_new_owner, env, runtime_handle),
         async_trial!(simulates_vote_withdrawer_migration, env, runtime_handle),

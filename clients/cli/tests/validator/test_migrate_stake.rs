@@ -56,6 +56,14 @@ async fn stake_authorized(env: &TestEnv, stake: &Address) -> Authorized {
         .unwrap()
 }
 
+async fn stake_lockup(env: &TestEnv, stake: &Address) -> Lockup {
+    let data = env.rpc.get_account_data(stake).await.unwrap();
+    wincode::deserialize::<StakeStateV2>(&data)
+        .unwrap()
+        .lockup()
+        .unwrap()
+}
+
 fn migrate_stake(
     env: &TestEnv,
     stake: &Address,
@@ -115,7 +123,7 @@ pub async fn migrates_stake_to_new_owner(env: &TestEnv) {
         migration.new_authority_signing_pubkey,
         new_owner.pubkey().to_string()
     );
-    assert_eq!(migration.custodian, None);
+    assert_eq!(migration.current_custodian, None);
     assert_signers(
         &migration.required_signers,
         &[authorization(&new_owner.pubkey())],
@@ -363,10 +371,15 @@ pub async fn migrates_stake_with_lockup_custodian(env: &TestEnv) {
         Some(&new_owner.pubkey()),
         &["--authority-type", "staker"],
     );
-    assert_eq!(staker_only.custodian, None);
+    assert_eq!(staker_only.current_custodian, None);
 
     let migration = migrate_stake(env, &stake, Some(&new_owner.pubkey()), &[]);
-    assert_eq!(migration.custodian, Some(custodian.pubkey().to_string()));
+    assert_eq!(
+        migration.current_custodian,
+        Some(custodian.pubkey().to_string())
+    );
+    // The custodian is a third party, so it co-signs but is unchanged.
+    assert_eq!(migration.authority_types, ["staker", "withdrawer"]);
     assert_signers(
         &migration.required_signers,
         &[authorization(&new_owner.pubkey())],
@@ -385,6 +398,142 @@ pub async fn migrates_stake_with_lockup_custodian(env: &TestEnv) {
     assert_eq!(
         stake_authorized(env, &stake).await,
         Authorized::auto(&new_owner_programmatic_signer)
+    );
+    assert_eq!(
+        stake_lockup(env, &stake).await.custodian,
+        custodian.pubkey()
+    );
+}
+
+/// A custodian that is the old key moves with it by default while the lockup is in force, so the
+/// old key can't keep extending the lockup.
+pub async fn migrates_stake_lockup_custodian_of_old_key(env: &TestEnv) {
+    let owner = Keypair::new();
+    let owner_signer = programmatic_signer(&owner.pubkey());
+    let locked = Lockup {
+        unix_timestamp: 0,
+        epoch: u64::MAX,
+        custodian: owner.pubkey(),
+    };
+    let nonce_account = create_nonce(env, &owner.pubkey());
+
+    let stake = create_stake_account(env, &Authorized::auto(&owner.pubkey()), &locked).await;
+    let migration = migrate_stake(env, &stake, None, &[]);
+    assert_eq!(
+        migration.authority_types,
+        ["staker", "withdrawer", "custodian"]
+    );
+    assert_eq!(
+        migration.current_custodian,
+        Some(owner.pubkey().to_string())
+    );
+    assert_signers(
+        &migration.required_signers,
+        &[authorization(&owner.pubkey())],
+        &[owner.pubkey()],
+    );
+    execute_migration(env, &migration, &nonce_account, &owner, &[], &[&owner]).await;
+    assert_eq!(
+        stake_authorized(env, &stake).await,
+        Authorized::auto(&owner_signer)
+    );
+    // Only the custodian changes; the lockup itself is kept.
+    assert_eq!(
+        stake_lockup(env, &stake).await,
+        Lockup {
+            custodian: owner_signer,
+            ..locked
+        }
+    );
+
+    // Without a lockup in force the custodian has no power, so it stays and can't be moved.
+    let unlocked = Lockup { epoch: 0, ..locked };
+    let stake = create_stake_account(env, &Authorized::auto(&owner.pubkey()), &unlocked).await;
+    let stderr = migrate_stake_error(env, &stake, None, &["--authority-type", "custodian"]);
+    assert!(
+        stderr.contains(&format!(
+            "stake account {stake} has no lockup in force, so its custodian has no authority to \
+             move"
+        )),
+        "{stderr}"
+    );
+    let migration = migrate_stake(env, &stake, None, &[]);
+    assert_eq!(migration.authority_types, ["staker", "withdrawer"]);
+    assert_eq!(migration.current_custodian, None);
+    execute_migration(env, &migration, &nonce_account, &owner, &[], &[&owner]).await;
+    assert_eq!(
+        stake_authorized(env, &stake).await,
+        Authorized::auto(&owner_signer)
+    );
+    assert_eq!(stake_lockup(env, &stake).await, unlocked);
+}
+
+/// Each authority type, the custodian included, moves on its own when asked for.
+pub async fn migrates_stake_lockup_custodian_on_its_own(env: &TestEnv) {
+    let owner = Keypair::new();
+    let owner_signer = programmatic_signer(&owner.pubkey());
+    let locked = Lockup {
+        unix_timestamp: 0,
+        epoch: u64::MAX,
+        custodian: owner.pubkey(),
+    };
+    let stake = create_stake_account(env, &Authorized::auto(&owner.pubkey()), &locked).await;
+    let nonce_account = create_nonce(env, &owner.pubkey());
+
+    // Moving only the staker leaves the custodian.
+    let staker = migrate_stake(env, &stake, None, &["--authority-type", "staker"]);
+    assert_eq!(staker.authority_types, ["staker"]);
+    assert_eq!(staker.current_custodian, None);
+    execute_migration(env, &staker, &nonce_account, &owner, &[], &[&owner]).await;
+    assert_eq!(stake_lockup(env, &stake).await, locked);
+
+    let custodian = migrate_stake(env, &stake, None, &["--authority-type", "custodian"]);
+    assert_eq!(custodian.authority_types, ["custodian"]);
+    assert_eq!(
+        custodian.current_custodian,
+        Some(owner.pubkey().to_string())
+    );
+    assert_signers(
+        &custodian.required_signers,
+        &[authorization(&owner.pubkey())],
+        &[owner.pubkey()],
+    );
+    execute_migration(env, &custodian, &nonce_account, &owner, &[], &[&owner]).await;
+    assert_eq!(
+        stake_lockup(env, &stake).await,
+        Lockup {
+            custodian: owner_signer,
+            ..locked
+        }
+    );
+
+    let stderr = migrate_stake_error(
+        env,
+        &stake,
+        Some(&owner.pubkey()),
+        &["--authority-type", "custodian"],
+    );
+    assert!(
+        stderr.contains(&format!(
+            "the custodian of stake account {stake} is already {owner_signer}"
+        )),
+        "{stderr}"
+    );
+
+    // The custodian is now the new authority's programmatic signer, which co-signs the withdrawer
+    // change as the execution message's fee payer.
+    let withdrawer = migrate_stake(env, &stake, None, &["--authority-type", "withdrawer"]);
+    assert_eq!(withdrawer.authority_types, ["withdrawer"]);
+    assert_eq!(withdrawer.current_custodian, Some(owner_signer.to_string()));
+    assert_signers(
+        &withdrawer.required_signers,
+        &[authorization(&owner.pubkey())],
+        &[owner.pubkey()],
+    );
+    execute_migration(env, &withdrawer, &nonce_account, &owner, &[], &[&owner]).await;
+    assert_eq!(
+        stake_authorized(env, &stake).await,
+        Authorized::auto(&owner_signer)
     );
 }
 
