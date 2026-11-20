@@ -22,8 +22,10 @@ export const MESSAGE_EXECUTOR_ERROR__NONCE_MISMATCH = 0x3; // 3
 export const MESSAGE_EXECUTOR_ERROR__UNSUPPORTED_MESSAGE_VERSION = 0x4; // 4
 export const MESSAGE_EXECUTOR_ERROR__UNSUPPORTED_TRANSACTION_CONFIG = 0x5; // 5
 export const MESSAGE_EXECUTOR_ERROR__INVALID_TRANSITION_SIGNER = 0x6; // 6
+export const MESSAGE_EXECUTOR_ERROR__EXECUTOR_INVOCATION = 0x7; // 7
 
 export type MessageExecutorError =
+    | typeof MESSAGE_EXECUTOR_ERROR__EXECUTOR_INVOCATION
     | typeof MESSAGE_EXECUTOR_ERROR__INVALID_MESSAGE
     | typeof MESSAGE_EXECUTOR_ERROR__INVALID_NONCE_ACCOUNT
     | typeof MESSAGE_EXECUTOR_ERROR__INVALID_TRANSITION_SIGNER
@@ -35,6 +37,7 @@ export type MessageExecutorError =
 let messageExecutorErrorMessages: Record<MessageExecutorError, string> | undefined;
 if (process.env['NODE_ENV'] !== 'production') {
     messageExecutorErrorMessages = {
+        [MESSAGE_EXECUTOR_ERROR__EXECUTOR_INVOCATION]: `The execution message invokes the Executor program`,
         [MESSAGE_EXECUTOR_ERROR__INVALID_MESSAGE]: `The v1 message fails sanitization or contains duplicate keys`,
         [MESSAGE_EXECUTOR_ERROR__INVALID_NONCE_ACCOUNT]: `The nonce account data could not be decoded as nonce state`,
         [MESSAGE_EXECUTOR_ERROR__INVALID_TRANSITION_SIGNER]: `The transition signer is not the Executor PDA for this nonce account`,

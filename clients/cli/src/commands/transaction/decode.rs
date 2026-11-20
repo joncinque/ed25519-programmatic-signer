@@ -42,6 +42,14 @@ pub(super) fn validate_execution_message(message: VersionedMessage) -> Result<v1
         "execution message must not set transaction config fields, which only apply to top-level \
          transactions. Pass --strip-transaction-config to remove them"
     );
+    ensure!(
+        !message.instructions.iter().any(|ix| {
+            message.account_keys.get(usize::from(ix.program_id_index))
+                == Some(&spl_message_executor_interface::ID)
+        }),
+        "execution message must not invoke the executor program. A nested Execute would run \
+         another execution message with the same signers"
+    );
     Ok(message)
 }
 

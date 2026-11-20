@@ -1,24 +1,21 @@
 use {
     crate::{
         common::{
-            execute::{build_authorization_message, programmatic_signer, signature_entry},
+            execute::programmatic_signer,
             helpers::{TestEnv, run_psigner, run_psigner_with_input},
         },
         test_migrate_token::{self as token, create_mint, mint_tokens},
-        test_transaction_submit::{SubmitTest, TRANSFER_AMOUNT, fund, submit},
+        test_transaction_submit::{SubmitTest, TRANSFER_AMOUNT, fund},
     },
     base64::{Engine, prelude::BASE64_STANDARD},
     solana_address::Address,
     solana_hash::Hash,
     solana_keypair::Keypair,
-    solana_message::{VersionedMessage, v1},
+    solana_message::v1,
     solana_program_pack::Pack,
-    solana_rpc_client_types::config::RpcSimulateTransactionConfig,
-    solana_signature::Signature,
     solana_signer::Signer,
     solana_system_interface::instruction::{create_account, transfer},
-    solana_transaction::{Transaction, versioned::VersionedTransaction},
-    spl_message_executor_client::instruction::execute,
+    solana_transaction::Transaction,
     spl_token_2022_interface::extension::ExtensionType,
     spl_token_interface::{
         instruction::{initialize_account3, initialize_mint2, mint_to, transfer_checked},
@@ -26,7 +23,6 @@ use {
     },
     std::{
         collections::{BTreeMap, BTreeSet},
-        iter,
         process::Output,
     },
 };
@@ -544,133 +540,48 @@ pub async fn simulates_token_transfer(env: &TestEnv) {
     );
 }
 
-/// An execution message that nests `inner.len()` further `Execute` calls, one per inner nonce
-/// account, around a transfer from `signer`. `outer` protects the returned message itself.
-fn nested_execution_message(
-    signer: &Address,
-    outer: &SubmitTest,
-    inner: &[SubmitTest],
-) -> v1::Message {
-    let Some((innermost, _)) = inner.split_last() else {
-        return outer.execution_message(&[*signer]);
-    };
-    let mut message = innermost.execution_message(&[*signer]);
-    // Each layer is protected by the nonce of the layer around it.
-    let lifetimes = iter::once(outer.nonce)
-        .chain(inner.iter().map(|test| test.nonce))
-        .collect::<Vec<_>>();
-    for (test, lifetime) in inner.iter().zip(lifetimes).rev() {
-        message = v1::Message::try_compile_with_config(
-            signer,
-            &[execute(&test.nonce_account, signer, &message)],
-            lifetime,
-            v1::TransactionConfig::empty(),
-        )
-        .unwrap();
-    }
-    message
-}
-
-/// Simulate `Execute` as the top-level instruction
-async fn simulate_direct_execute(
-    env: &TestEnv,
-    test: &SubmitTest,
-    signer: &Address,
-    execution_message: &v1::Message,
-) -> Option<String> {
-    let message = v1::Message::try_compile_with_config(
-        &env.payer.pubkey(),
-        &[execute(&test.nonce_account, signer, execution_message)],
-        Hash::default(),
-        v1::TransactionConfig::empty()
-            .with_compute_unit_limit(1_400_000)
-            .with_loaded_accounts_data_size_limit(64 * 1024 * 1024),
-    )
-    .unwrap();
-    let transaction = VersionedTransaction {
-        signatures: vec![Signature::default(); usize::from(message.header.num_required_signatures)],
-        message: VersionedMessage::V1(message),
-    };
-    env.rpc
-        .simulate_transaction_with_config(
-            &transaction,
-            RpcSimulateTransactionConfig {
-                sig_verify: false,
-                replace_recent_blockhash: true,
-                commitment: Some(env.rpc.commitment()),
-                ..RpcSimulateTransactionConfig::default()
-            },
-        )
-        .await
-        .unwrap()
-        .value
-        .err
-        .map(|error| format!("{error:?}"))
-}
-
 pub async fn simulates_at_relay_cpi_depth(env: &TestEnv) {
-    // Well above the runtime's maximum instruction stack depth.
-    const MAX_NESTING: usize = 10;
-    const CALL_DEPTH_ERROR: &str = "Cross-program invocation call depth too deep";
     let authority = Keypair::new();
     let signer = programmatic_signer(&authority.pubkey());
+    fund(env, &[signer]).await;
+    let test = SubmitTest::new(env, &signer).await;
 
-    // Reuse the authorization authority as recipient to keep the nested relay within the
-    // transaction size limit, so this test reaches the CPI depth limit.
-    fund(env, &[signer, authority.pubkey()]).await;
-    let outer = SubmitTest::new(env, &signer).await;
-
-    let mut inner = Vec::new();
-    for nesting in 0..=MAX_NESTING {
-        if nesting > 0 {
-            let mut test = SubmitTest::new(env, &signer).await;
-            test.recipient = authority.pubkey();
-            inner.push(test);
-        }
-        let execution_message = nested_execution_message(&signer, &outer, &inner);
-        let output = simulate(env, &outer, &execution_message, &[]);
-        if output.status.success() {
-            continue;
-        }
-        // A top-level Execute runs this nesting one stack frame shallower than the relay
-        // transaction does, so it still fits there.
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(!inner.is_empty(), "{stderr}");
-        assert!(stderr.contains(CALL_DEPTH_ERROR), "{stderr}");
-        assert_eq!(
-            simulate_direct_execute(env, &outer, &signer, &execution_message).await,
-            None
-        );
-
-        // Real submissions match the simulation results: this nesting fails, and the nesting one
-        // level shallower, which simulated successfully, succeeds.
-        let submit = |execution_message: &v1::Message| {
-            let message = build_authorization_message(
-                execution_message,
-                &outer.nonce_account,
-                &signer,
-                &[authority.pubkey()],
-            );
-            let entry = signature_entry(&authority, &message);
-            submit(env, &message, &["--signer", &entry], "")
-        };
-        let output = submit(&execution_message);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(!output.status.success(), "unexpected success: {stderr}");
-        assert!(stderr.contains(CALL_DEPTH_ERROR), "{stderr}");
-        // Infallible: `inner` is not empty, as asserted above.
-        let (_, shallower_inner) = inner.split_last().unwrap();
-        let shallower = nested_execution_message(&signer, &outer, shallower_inner);
-        let output = submit(&shallower);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(output.status.success(), "{stderr}");
-        // The innermost transfer of the shallower message pays its layer's recipient.
-        shallower_inner
-            .last()
-            .unwrap_or(&outer)
-            .assert_received(env, 1)
-            .await;
-        return;
-    }
-    panic!("simulation never reached the maximum instruction stack depth");
+    let output = simulate(
+        env,
+        &test,
+        &test.execution_message(&[signer]),
+        &["--verbose"],
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stderr}");
+    let result = stderr
+        .strip_prefix("Simulation result:\n")
+        .unwrap_or_else(|| panic!("{stderr}"));
+    let result: serde_json::Value = serde_json::from_str(result).unwrap();
+    let invocations = result["logs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|log| {
+            let log = log.as_str().unwrap();
+            log.contains(" invoke [").then_some(log)
+        })
+        .collect::<Vec<_>>();
+    // The relay transaction's Submit invokes Execute, which advances the nonce and then runs the
+    // execution message, so its instructions run at the same depth as in a real submission.
+    assert_eq!(
+        invocations,
+        [
+            format!("Program {} invoke [1]", spl_ed25519_signer_client::id()),
+            format!(
+                "Program {} invoke [2]",
+                spl_message_executor_interface::id()
+            ),
+            format!("Program {} invoke [3]", spl_nonce_interface::id()),
+            format!(
+                "Program {} invoke [3]",
+                solana_system_interface::program::id()
+            ),
+        ]
+    );
 }

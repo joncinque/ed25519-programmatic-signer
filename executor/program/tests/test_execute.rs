@@ -725,3 +725,34 @@ fn execute_downgrades_nonce_authority_signer_privilege_for_message_cpi() {
         .check_err(ProgramError::MissingRequiredSignature)
         .execute();
 }
+
+#[test]
+fn execute_rejects_message_that_invokes_executor() {
+    // A nested Execute would run a second execution message with the outer message's signer
+    // privileges, so the outer message must not invoke the executor at all.
+    let mollusk = init_mollusk();
+    let (inner_nonce_address, inner_nonce_account) =
+        initialize_nonce_account(&mollusk, &DEFAULT_AUTHORITY);
+    let inner_message = v1::Message::try_compile_with_config(
+        &DEFAULT_AUTHORITY,
+        &[],
+        decode_state(&inner_nonce_account).nonce,
+        v1::TransactionConfig::empty(),
+    )
+    .unwrap();
+    let executor_id = spl_message_executor_interface::id();
+
+    ExecuteBuilder::new(mollusk)
+        .message_instruction(spl_message_executor_client::instruction::execute(
+            &inner_nonce_address,
+            &DEFAULT_AUTHORITY,
+            &inner_message,
+        ))
+        .account(inner_nonce_address, inner_nonce_account)
+        .account(
+            executor_id,
+            mollusk_svm::program::create_program_account_loader_v3(&executor_id),
+        )
+        .check_err(MessageExecutorError::ExecutorInvocation)
+        .execute();
+}

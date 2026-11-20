@@ -54,6 +54,13 @@ pub enum Error {
         ))
     )]
     InvalidTransitionSigner = 6,
+    /// The execution message has an instruction for the Executor program. A nested Execute would
+    /// run another execution message with this message's signers.
+    #[cfg_attr(
+        feature = "codama",
+        codama(error(message = "The execution message invokes the Executor program"))
+    )]
+    ExecutorInvocation = 7,
 }
 
 impl From<Error> for ProgramError {

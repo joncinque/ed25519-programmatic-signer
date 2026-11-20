@@ -410,6 +410,12 @@
           "name": "invalidTransitionSigner",
           "code": 6,
           "message": "The transition signer is not the Executor PDA for this nonce account"
+        },
+        {
+          "kind": "errorNode",
+          "name": "executorInvocation",
+          "code": 7,
+          "message": "The execution message invokes the Executor program"
         }
       ]
     },

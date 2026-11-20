@@ -513,6 +513,12 @@ fn rejects_non_v1_execution_message(convert: fn(&v1::Message) -> VersionedMessag
     "execution message must not set transaction config fields";
     "transaction config"
 )]
+#[test_case(
+    |m| m.account_keys[usize::from(m.instructions[0].program_id_index)] =
+        spl_message_executor_interface::ID,
+    "execution message must not invoke the executor program";
+    "executor invocation"
+)]
 fn rejects_invalid_execution_message(mutate: fn(&mut v1::Message), error: &str) {
     let mut env = SignTestEnv::new();
     mutate(&mut env.execution_message);
