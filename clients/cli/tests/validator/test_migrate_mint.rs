@@ -111,6 +111,16 @@ async fn migrates_mint_authorities(env: &TestEnv, token_program: &Address) {
     assert_eq!(migration.token_program, token_program.to_string());
     assert_eq!(migration.authority_types, ["mint", "freeze"]);
     assert!(migration.unset_authority_types.is_empty());
+    // Naming both, in any order, builds the same execution message.
+    let named: MintMigrationOutput = migrate(
+        env,
+        "mint",
+        &mint,
+        Some(&new_owner.pubkey()),
+        &["--authority-type", "freeze", "--authority-type", "mint"],
+    );
+    assert_eq!(named.authority_types, ["mint", "freeze"]);
+    assert_eq!(named.execution_message, migration.execution_message);
     assert_eq!(
         migration.new_authority,
         new_owner_programmatic_signer.to_string()
@@ -355,6 +365,18 @@ pub async fn migrates_mint_without_freeze_authority(env: &TestEnv) {
         &mint,
         Some(&new_owner.pubkey()),
         &["--authority-type", "freeze"],
+    );
+    assert!(
+        stderr.contains(&format!("mint {mint} has no freeze authority")),
+        "{stderr}"
+    );
+    // Also when named alongside the mint authority.
+    let stderr = migrate_error(
+        env,
+        "mint",
+        &mint,
+        Some(&new_owner.pubkey()),
+        &["--authority-type", "mint", "--authority-type", "freeze"],
     );
     assert!(
         stderr.contains(&format!("mint {mint} has no freeze authority")),

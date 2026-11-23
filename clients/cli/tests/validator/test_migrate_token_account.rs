@@ -185,6 +185,16 @@ async fn migrates_token_account_authorities(env: &TestEnv, token_program: &Addre
     assert_eq!(migration.authority_types, ["owner", "close"]);
     assert!(migration.unset_authority_types.is_empty());
     assert_eq!(migration.revoked_delegate, Some(delegate.to_string()));
+    // Naming both, in any order, builds the same execution message.
+    let named: TokenAccountMigrationOutput = migrate(
+        env,
+        "token-account",
+        &account,
+        Some(&new_owner.pubkey()),
+        &["--authority-type", "close", "--authority-type", "owner"],
+    );
+    assert_eq!(named.authority_types, ["owner", "close"]);
+    assert_eq!(named.execution_message, migration.execution_message);
     assert_eq!(migration.unset_close_authority, None);
     assert_eq!(
         migration.new_authority,
@@ -357,6 +367,20 @@ pub async fn migrates_token_account_authorities_one_at_a_time(env: &TestEnv) {
         &account,
         Some(&new_owner.pubkey()),
         &["--authority-type", "close"],
+    );
+    assert!(
+        stderr.contains(&format!(
+            "token account {account} has no close authority, so its owner can close it"
+        )),
+        "{stderr}"
+    );
+    // Also when named alongside the owner.
+    let stderr = migrate_error(
+        env,
+        "token-account",
+        &account,
+        Some(&new_owner.pubkey()),
+        &["--authority-type", "owner", "--authority-type", "close"],
     );
     assert!(
         stderr.contains(&format!(

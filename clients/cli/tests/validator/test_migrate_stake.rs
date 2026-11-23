@@ -537,6 +537,89 @@ pub async fn migrates_stake_lockup_custodian_on_its_own(env: &TestEnv) {
     );
 }
 
+/// Several authority types move together in one execution message, such as an owner holding the
+/// staker and the custodian but not the withdrawer.
+pub async fn migrates_several_stake_authority_types(env: &TestEnv) {
+    let owner = Keypair::new();
+    let owner_signer = programmatic_signer(&owner.pubkey());
+    let withdrawer = Keypair::new();
+    let locked = Lockup {
+        unix_timestamp: 0,
+        epoch: u64::MAX,
+        custodian: owner.pubkey(),
+    };
+    let stake = create_stake_account(
+        env,
+        &Authorized {
+            staker: owner.pubkey(),
+            withdrawer: withdrawer.pubkey(),
+        },
+        &locked,
+    )
+    .await;
+    let nonce_account = create_nonce(env, &owner.pubkey());
+
+    // The staker and withdrawer differ, so neither is the default for moving both.
+    let stderr = migrate_stake_error(
+        env,
+        &stake,
+        None,
+        &[
+            "--authority-type",
+            "staker",
+            "--authority-type",
+            "withdrawer",
+        ],
+    );
+    assert!(
+        stderr.contains(&format!(
+            "the staker {} and withdrawer {} of stake account {stake} differ",
+            owner.pubkey(),
+            withdrawer.pubkey()
+        )),
+        "{stderr}"
+    );
+
+    // Named with commas or by repeating the flag. Listed in a fixed order, whatever order they're
+    // named in, and repeats are ignored.
+    let migration = migrate_stake(
+        env,
+        &stake,
+        None,
+        &[
+            "--authority-type",
+            "custodian,staker",
+            "--authority-type",
+            "custodian",
+        ],
+    );
+    assert_eq!(migration.authority_types, ["staker", "custodian"]);
+    assert_eq!(
+        migration.current_custodian,
+        Some(owner.pubkey().to_string())
+    );
+    assert_signers(
+        &migration.required_signers,
+        &[authorization(&owner.pubkey())],
+        &[owner.pubkey()],
+    );
+    execute_migration(env, &migration, &nonce_account, &owner, &[], &[&owner]).await;
+    assert_eq!(
+        stake_authorized(env, &stake).await,
+        Authorized {
+            staker: owner_signer,
+            withdrawer: withdrawer.pubkey(),
+        }
+    );
+    assert_eq!(
+        stake_lockup(env, &stake).await,
+        Lockup {
+            custodian: owner_signer,
+            ..locked
+        }
+    );
+}
+
 pub async fn rejects_invalid_stake_migrations(env: &TestEnv) {
     let owner = Keypair::new();
     let stake =

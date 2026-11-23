@@ -1,6 +1,6 @@
 use {
     super::{
-        mint::AuthorityType, new_owner_programmatic_signer, stake::role_name, token_account,
+        mint::AuthorityType, new_owner_programmatic_signer, stake, token_account,
         vote::authorized_withdrawer,
     },
     crate::{
@@ -22,7 +22,7 @@ use {
     solana_native_token::Sol,
     solana_program_pack::Pack,
     solana_rpc_client_types::filter::{Memcmp, RpcFilterType},
-    solana_stake_interface::state::{StakeAuthorize, StakeStateV2},
+    solana_stake_interface::state::StakeStateV2,
     spl_associated_token_account_interface::address::get_associated_token_address_with_program_id,
     spl_token_2022_interface::{
         extension::AccountType,
@@ -138,10 +138,10 @@ async fn scan_stake(
     owner: &Address,
     new_authority_args: &[&str],
 ) -> Result<Vec<StakeScanItem>> {
-    let mut accounts = BTreeMap::<Address, (u64, Vec<StakeAuthorize>)>::new();
+    let mut accounts = BTreeMap::<Address, (u64, Vec<stake::AuthorityType>)>::new();
     for (role, offset) in [
-        (StakeAuthorize::Staker, STAKER_OFFSET),
-        (StakeAuthorize::Withdrawer, WITHDRAWER_OFFSET),
+        (stake::AuthorityType::Staker, STAKER_OFFSET),
+        (stake::AuthorityType::Withdrawer, WITHDRAWER_OFFSET),
     ] {
         let matches = client
             .program_accounts(
@@ -160,11 +160,7 @@ async fn scan_stake(
             else {
                 continue;
             };
-            let authority = match role {
-                StakeAuthorize::Staker => meta.authorized.staker,
-                StakeAuthorize::Withdrawer => meta.authorized.withdrawer,
-            };
-            if authority == *owner {
+            if role.current_authority(&meta) == *owner {
                 accounts
                     .entry(address)
                     .or_insert((account.lamports, vec![]))
@@ -184,14 +180,11 @@ async fn scan_stake(
             // if `roles` is only one, we add `--authority-type` for it
             // note that we only add an entry with a role, so this is always non-empty
             if let [role] = roles.as_slice() {
-                args.extend(["--authority-type", role_name(*role)]);
+                args.extend(["--authority-type", role.name()]);
             }
             StakeScanItem {
                 command: migrate_command(&args),
-                authority_types: roles
-                    .iter()
-                    .map(|role| role_name(*role).to_string())
-                    .collect(),
+                authority_types: roles.iter().map(|role| role.name().to_string()).collect(),
                 lamports,
                 stake_account: address,
             }
