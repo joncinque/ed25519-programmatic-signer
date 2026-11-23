@@ -1,0 +1,208 @@
+=== Signing ===
+Authorization message hash: 6nVLKReZZLfK3qS69ZpthS1uEXnFXZG3Q29ibr1Fqqx
+Execution message hash: 4rXQqfPtrKngMMAMVKpKEFfiy4didjGUUydmqedeNhqt
+PDA promotion authorities:
+  AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9 (derived signer: 3jCYn5zriQtvK6iEkWyDc3M6dkHvmR9XccrZyjJF96tF)
+
+Forwarded signers (sign at submission):
+  QWmroo4YnnMqYW3cnxWkFdaTxGD3P7vMSzwMHGbUzwF
+
+=== Replay protection ===
+SPL nonce account address: 8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR
+Nonce authority: 3jCYn5zriQtvK6iEkWyDc3M6dkHvmR9XccrZyjJF96tF
+Expected nonce value (execution message's recent blockhash): YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf
+Next nonce value (after this message executes): DXXaY97KuU74cRZx82dXQGz3sVDWL464UMTyWFWS8ug4
+
+=== Authorization message ===
+Your signatures authorize this Execute call, including its accounts, permissions,
+and the execution message.
+
+v1 message:
+{
+  "header": {
+    "numRequiredSignatures": 2,
+    "numReadonlySignedAccounts": 1,
+    "numReadonlyUnsignedAccounts": 6
+  },
+  "accountKeys": [
+    "QWmroo4YnnMqYW3cnxWkFdaTxGD3P7vMSzwMHGbUzwF",
+    "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR",
+    "3jCYn5zriQtvK6iEkWyDc3M6dkHvmR9XccrZyjJF96tF",
+    "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8",
+    "GgBaCs3NCBuZN12kCJgAW63ydqohFkHEdfdEXBPzLHq",
+    "LbUiWL3xVV8hTFYBVdbTNrpDo41NKS6o3LHHuDzjfcY",
+    "cGfHiC6Kgg3FpFZvgwGcswsCRtp4aBP2fzuXRQPizuN",
+    "ExecxgyHYsAXB4c5dZodV1zJZ9hqfsDCYkRDRATrpkFR",
+    "Noncediea1fH12usShuQAz28UhgAeuE5Maf32LsMUQB",
+    "EjCSGNbrrM7YJBwR9iqnrb87L1TYHfUtZ5L4gwQjWLFg",
+    "11111111111111111111111111111111",
+    "US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx",
+    "YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf"
+  ],
+  "recentBlockhash": "11111111111111111111111111111111",
+  "instructions": [
+    {
+      "programIdIndex": 8,
+      "accounts": [
+        3,
+        2,
+        9,
+        10,
+        3,
+        0,
+        4,
+        5,
+        6,
+        7,
+        11,
+        9,
+        12,
+        13
+      ],
+      "data": "186HENP5LCtbrbQRQMovFhXkgN5qSUXT7Px4Ryk8f9VZP5nXor7nhpC7bgEf4qfPa48yuGXdE5kVGBiAKAGwzdX3owRcGHEL1ZicTsNoMeCWDPgmYcST4evCh1uhKDvpvAqUQqo8jenfmbrH8hqNsBt2LZfNv5htpYHJBDkvsE3Xom6V6SwzpUub8DzNtTVHYHioRhXHa9RGQQkzTawGxCXNPCYQKYtcLZAQhTnu53AneS1Bap1cxC3QmLLpz374P4MTYjJtcQXjCApRnBayy7PNhdrizyN3c3vfMka6izbSD4ofwd8947DwydZLqZvMnqJc6iVjPYpcxcf4GQJhs7t7CXqdumpta9iwohJHLvZSbgcbxboofc2xQyqQJ8aUMNHq2yz5NmbSeXsEZWY2ujbGP9nHvUyQDByx85hRdAHdcyxGNBfEBHxJi9PGf6A6fyQA8zGJGGDZf793YzLasUEyJpfHzasDAaqTeGZiosanZSjdEpuivxzcUPvoh9ucsxqtaoeRmwj7ueVZD2LnXGQEfpXEqaSWB6kjPLG2y25m5nQYG1hD",
+      "stackHeight": 1
+    }
+  ],
+  "transactionConfig": {
+    "priorityFee": null,
+    "computeUnitLimit": null,
+    "loadedAccountsDataSizeLimit": null,
+    "heapSize": null
+  }
+}
+
+=== Execution message (what the executor program invokes via CPI) ===
+v1 message:
+{
+  "accountKeys": [
+    {
+      "pubkey": "3jCYn5zriQtvK6iEkWyDc3M6dkHvmR9XccrZyjJF96tF",
+      "writable": true,
+      "signer": true,
+      "source": "transaction"
+    },
+    {
+      "pubkey": "QWmroo4YnnMqYW3cnxWkFdaTxGD3P7vMSzwMHGbUzwF",
+      "writable": false,
+      "signer": true,
+      "source": "transaction"
+    },
+    {
+      "pubkey": "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8",
+      "writable": true,
+      "signer": false,
+      "source": "transaction"
+    },
+    {
+      "pubkey": "GgBaCs3NCBuZN12kCJgAW63ydqohFkHEdfdEXBPzLHq",
+      "writable": true,
+      "signer": false,
+      "source": "transaction"
+    },
+    {
+      "pubkey": "LbUiWL3xVV8hTFYBVdbTNrpDo41NKS6o3LHHuDzjfcY",
+      "writable": true,
+      "signer": false,
+      "source": "transaction"
+    },
+    {
+      "pubkey": "cGfHiC6Kgg3FpFZvgwGcswsCRtp4aBP2fzuXRQPizuN",
+      "writable": true,
+      "signer": false,
+      "source": "transaction"
+    },
+    {
+      "pubkey": "11111111111111111111111111111111",
+      "writable": false,
+      "signer": false,
+      "source": "transaction"
+    },
+    {
+      "pubkey": "Noncediea1fH12usShuQAz28UhgAeuE5Maf32LsMUQB",
+      "writable": false,
+      "signer": false,
+      "source": "transaction"
+    },
+    {
+      "pubkey": "US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx",
+      "writable": false,
+      "signer": false,
+      "source": "transaction"
+    },
+    {
+      "pubkey": "YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf",
+      "writable": false,
+      "signer": false,
+      "source": "transaction"
+    }
+  ],
+  "recentBlockhash": "YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf",
+  "instructions": [
+    {
+      "program": "system",
+      "programId": "11111111111111111111111111111111",
+      "parsed": {
+        "info": {
+          "destination": "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8",
+          "lamports": 1,
+          "source": "3jCYn5zriQtvK6iEkWyDc3M6dkHvmR9XccrZyjJF96tF"
+        },
+        "type": "transfer"
+      },
+      "stackHeight": 1
+    },
+    {
+      "program": "spl-nonce",
+      "programId": "Noncediea1fH12usShuQAz28UhgAeuE5Maf32LsMUQB",
+      "parsed": {
+        "info": {
+          "authority": "3jCYn5zriQtvK6iEkWyDc3M6dkHvmR9XccrZyjJF96tF",
+          "destination": "LbUiWL3xVV8hTFYBVdbTNrpDo41NKS6o3LHHuDzjfcY",
+          "lamports": 5,
+          "nonceAccount": "GgBaCs3NCBuZN12kCJgAW63ydqohFkHEdfdEXBPzLHq"
+        },
+        "type": "withdraw"
+      },
+      "stackHeight": 1
+    },
+    {
+      "programId": "US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx",
+      "accounts": [
+        "3jCYn5zriQtvK6iEkWyDc3M6dkHvmR9XccrZyjJF96tF",
+        "QWmroo4YnnMqYW3cnxWkFdaTxGD3P7vMSzwMHGbUzwF",
+        "cGfHiC6Kgg3FpFZvgwGcswsCRtp4aBP2fzuXRQPizuN",
+        "3jCYn5zriQtvK6iEkWyDc3M6dkHvmR9XccrZyjJF96tF"
+      ],
+      "data": "Ldp",
+      "stackHeight": 1
+    },
+    {
+      "programId": "YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf",
+      "accounts": [],
+      "data": "5",
+      "stackHeight": 1
+    }
+  ],
+  "transactionConfig": {
+    "priorityFee": null,
+    "computeUnitLimit": null,
+    "loadedAccountsDataSizeLimit": null,
+    "heapSize": null
+  }
+}
+
+=== Review required ===
+This CLI cannot decode these execution message instructions. Check each program and its
+instruction data independently before signing. Each signer listed is a signer for that
+program.
+Instruction 2: program US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx
+  Data: 3 bytes (see instructions[2] in the execution message above)
+  Signers it receives:
+    3jCYn5zriQtvK6iEkWyDc3M6dkHvmR9XccrZyjJF96tF (PDA of AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9)
+    QWmroo4YnnMqYW3cnxWkFdaTxGD3P7vMSzwMHGbUzwF
+Instruction 3: program YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf
+  Data: 1 byte (see instructions[3] in the execution message above)
+  No signers
+
+Returns forwarded signers, the consumed and next nonce values, message hashes, a timestamp, and the base64 authorization message for external signers. Nothing is signed or submitted.

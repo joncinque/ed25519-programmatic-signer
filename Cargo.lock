@@ -10372,6 +10372,7 @@ dependencies = [
  "solana-rpc",
  "solana-rpc-client",
  "solana-rpc-client-types",
+ "solana-sanitize",
  "solana-sdk-ids",
  "solana-signature",
  "solana-signer",

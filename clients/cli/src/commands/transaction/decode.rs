@@ -2,6 +2,7 @@ use {
     anyhow::{Context, Result, bail, ensure},
     base64::{Engine, prelude::BASE64_STANDARD},
     solana_message::{VersionedMessage, v1},
+    solana_sanitize::Sanitize,
 };
 
 /// Decode and sanitize a base64-encoded message. `name` describes the message in errors.
@@ -31,12 +32,14 @@ pub(super) fn read_execution_message(
     validate_execution_message(message)
 }
 
-/// Check that a sanitized execution message is one the executor can invoke. Sanitizing a v1 message
-/// already rejects duplicate account keys.
+/// Check that an execution message is one the executor can invoke, in the executor's order.
+/// Sanitizes it, since a message decoded from `Execute` instruction data is not sanitized with
+/// the authorization message. Sanitizing a v1 message also rejects duplicate account keys.
 pub(super) fn validate_execution_message(message: VersionedMessage) -> Result<v1::Message> {
     let VersionedMessage::V1(message) = message else {
         bail!("the executor supports only v1 execution messages");
     };
+    message.sanitize().context("invalid execution message")?;
     ensure!(
         message.config == v1::TransactionConfig::default(),
         "execution message must not set transaction config fields, which only apply to top-level \

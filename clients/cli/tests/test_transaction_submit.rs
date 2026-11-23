@@ -10,7 +10,9 @@ use {
     solana_hash::Hash,
     solana_instruction::{AccountMeta, Instruction},
     solana_keypair::{Keypair, write_keypair_file},
-    solana_message::{VersionedMessage, legacy, v1},
+    solana_message::{
+        MessageHeader, VersionedMessage, compiled_instruction::CompiledInstruction, legacy, v1,
+    },
     solana_signature::Signature,
     solana_signer::Signer,
     solana_system_interface::instruction::transfer,
@@ -354,13 +356,25 @@ fn rejects_non_executor_instruction() {
     );
 }
 
+/// The smallest execution message that passes sanitization: one fee payer and no instructions.
+fn sanitized_execution_message() -> v1::Message {
+    v1::Message {
+        header: MessageHeader {
+            num_required_signatures: 1,
+            ..MessageHeader::default()
+        },
+        account_keys: vec![Address::new_unique()],
+        ..v1::Message::default()
+    }
+}
+
 #[test_case(1; "missing nonce accounts")]
 #[test_case(3; "missing transition signer")]
 fn rejects_execute_with_missing_accounts(account_count: usize) {
     let env = SubmitTestEnv::new();
     let instruction = Instruction::new_with_wincode(
         spl_message_executor_interface::id(),
-        &ExecutorInstruction::Execute(VersionedMessage::V1(v1::Message::default())),
+        &ExecutorInstruction::Execute(VersionedMessage::V1(sanitized_execution_message())),
         (0..account_count)
             .map(|_| AccountMeta::new(Address::new_unique(), false))
             .collect(),
@@ -383,10 +397,19 @@ fn rejects_execute_with_missing_accounts(account_count: usize) {
 #[test_case(
     VersionedMessage::V1(v1::Message {
         config: v1::TransactionConfig::default().with_priority_fee(1),
-        ..v1::Message::default()
+        ..sanitized_execution_message()
     }),
     "execution message must not set transaction config fields";
     "transaction config"
+)]
+#[test_case(
+    VersionedMessage::V1(v1::Message {
+        // Program index past the account keys
+        instructions: vec![CompiledInstruction::new_from_raw_parts(1, vec![], vec![])],
+        ..sanitized_execution_message()
+    }),
+    "invalid execution message";
+    "unsanitized"
 )]
 fn rejects_execution_message_the_executor_cannot_invoke(
     execution_message: VersionedMessage,

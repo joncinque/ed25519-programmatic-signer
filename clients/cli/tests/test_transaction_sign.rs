@@ -29,6 +29,8 @@ struct SignTestEnv {
     keypair_file: String,
     authority: Keypair,
     authorities: Vec<String>,
+    /// The derived signer of `authority`.
+    pda: Address,
     execution_message: v1::Message,
     encoded: String,
     nonce_account: String,
@@ -75,6 +77,7 @@ impl SignTestEnv {
             config,
             authorities: vec![authority.pubkey().to_string()],
             authority,
+            pda,
             nonce_account: Address::new_from_array([2; 32]).to_string(),
             nonce_hash: Hash::new_from_array([8; 32]).to_string(),
             nonce_authority: pda.to_string(),
@@ -261,6 +264,26 @@ impl SignTestEnv {
         assert!(stderr.contains(expected), "{stderr}");
         assert!(output.stdout.is_empty());
         assert!(!stderr.contains("Sign this message for "));
+    }
+
+    /// Replace the execution message with one paid for by the authority's derived signer.
+    fn set_instructions(&mut self, instructions: &[solana_instruction::Instruction]) {
+        self.execution_message = v1::Message::try_compile_with_config(
+            &self.pda,
+            instructions,
+            Hash::new_from_array([99; 32]),
+            v1::TransactionConfig::empty(),
+        )
+        .unwrap();
+        self.encoded = BASE64_STANDARD.encode(self.execution_message.serialize());
+    }
+
+    /// The signing summary for the unsigned authorization message.
+    fn summary(&self) -> String {
+        let output = run_psigner(&self.args(&[]));
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(output.status.success(), "{stderr}");
+        stderr
     }
 }
 
@@ -690,7 +713,7 @@ fn signatures_bind_all_supplied_nonce_details(field: &str) {
 fn next_nonce_commits_to_execution_message() {
     let mut env = SignTestEnv::new();
     let original = env.next_nonce();
-    let pda = env.nonce_authority.parse().unwrap();
+    let pda = env.pda;
     env.execution_message = v1::Message::try_compile_with_config(
         &pda,
         &[transfer(&pda, &Address::new_from_array([3; 32]), 2)],
@@ -914,10 +937,9 @@ fn nonce_only_approval_includes_ordinary_execution_signers() {
 #[test_case(true; "non signer PDA")]
 fn rejects_authority_without_signer_role(pda_is_account: bool) {
     let mut env = SignTestEnv::new();
-    let pda: Address = env.nonce_authority.parse().unwrap();
     env.nonce_authority = Address::new_unique().to_string();
     let recipient = if pda_is_account {
-        pda
+        env.pda
     } else {
         Address::new_unique()
     };
@@ -1237,4 +1259,101 @@ fn unsigned_display_shows_authorization_message() {
         )
     );
     assert!(output.stderr.is_empty());
+}
+
+/// The execution message JSON from a signing summary.
+fn execution_message_json(summary: &str) -> serde_json::Value {
+    let (_, rest) = summary
+        .split_once(
+            "=== Execution message (what the executor program invokes via CPI) ===\nv1 message:\n",
+        )
+        .unwrap();
+    let (json, _) = rest.split_once("\n\n").unwrap();
+    serde_json::from_str(json).unwrap()
+}
+
+#[test_case(|pda, nonce, _| spl_nonce_client::instruction::initialize(nonce, pda), "initialize",
+    |pda, nonce, _| serde_json::json!({
+        "nonceAccount": nonce.to_string(),
+        "authority": pda.to_string(),
+        "slotHashesSysvar": solana_sdk_ids::sysvar::slot_hashes::id().to_string(),
+    }); "initialize")]
+#[test_case(|pda, nonce, _| spl_nonce_client::instruction::advance(
+        pda, pda, nonce, Hash::new_from_array([10; 32]), Hash::new_from_array([11; 32])),
+    "advance",
+    |pda, nonce, _| serde_json::json!({
+        "authority": pda.to_string(),
+        "transitionSigner": pda.to_string(),
+        "nonceAccount": nonce.to_string(),
+        "currentNonce": Hash::new_from_array([10; 32]).to_string(),
+        "transitionCommitment": Hash::new_from_array([11; 32]).to_string(),
+    }); "advance")]
+#[test_case(|pda, nonce, destination| spl_nonce_client::instruction::withdraw(
+        pda, nonce, destination, 5),
+    "withdraw",
+    |pda, nonce, destination| serde_json::json!({
+        "authority": pda.to_string(),
+        "nonceAccount": nonce.to_string(),
+        "destination": destination.to_string(),
+        "lamports": 5,
+    }); "withdraw")]
+fn summary_decodes_nonce_instructions(
+    instruction: fn(&Address, &Address, &Address) -> solana_instruction::Instruction,
+    instruction_type: &str,
+    info: fn(&Address, &Address, &Address) -> serde_json::Value,
+) {
+    let mut env = SignTestEnv::new();
+    let pda = env.pda;
+    let nonce_account = Address::new_from_array([4; 32]);
+    let destination = Address::new_from_array([5; 32]);
+    env.set_instructions(&[instruction(&pda, &nonce_account, &destination)]);
+    let summary = env.summary();
+    assert_eq!(
+        execution_message_json(&summary)["instructions"],
+        serde_json::json!([{
+            "program": "spl-nonce",
+            "programId": spl_nonce_interface::id().to_string(),
+            "parsed": {
+                "type": instruction_type,
+                "info": info(&pda, &nonce_account, &destination),
+            },
+            "stackHeight": 1,
+        }])
+    );
+    assert!(!summary.contains("=== Review required ==="), "{summary}");
+}
+
+#[test]
+fn summary_flags_undecoded_instructions_and_their_signers() {
+    let mut env = SignTestEnv::new();
+    let pda = env.pda;
+    env.set_instructions(&[
+        transfer(&pda, &Address::new_from_array([3; 32]), 1),
+        spl_nonce_client::instruction::withdraw(
+            &pda,
+            &Address::new_from_array([4; 32]),
+            &Address::new_from_array([5; 32]),
+            5,
+        ),
+        // Repeats the PDA, which is listed once, alongside a co-signer and a non-signer.
+        solana_instruction::Instruction::new_with_bytes(
+            Address::new_from_array([7; 32]),
+            &[1, 2, 3],
+            vec![
+                AccountMeta::new(pda, true),
+                AccountMeta::new_readonly(Address::new_from_array([6; 32]), true),
+                AccountMeta::new(Address::new_from_array([9; 32]), false),
+                AccountMeta::new(pda, true),
+            ],
+        ),
+        solana_instruction::Instruction::new_with_bytes(
+            Address::new_from_array([8; 32]),
+            &[4],
+            vec![],
+        ),
+    ]);
+    assert_eq!(
+        env.summary().trim_end(),
+        include_str!("goldens/transaction-approval-review-required.txt").trim_end()
+    );
 }

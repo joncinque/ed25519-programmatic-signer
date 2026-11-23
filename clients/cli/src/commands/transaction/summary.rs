@@ -1,4 +1,5 @@
 use {
+    super::parse::{encode_execution_message, undecoded_instructions},
     anyhow::{Context, Result, ensure},
     indoc::formatdoc,
     solana_address::Address,
@@ -51,8 +52,13 @@ pub(super) fn render_signing_summary(
     signers: &SummarySigners,
     closing: &str,
 ) -> Result<String> {
-    let execution_json =
-        serde_json::to_string_pretty(&execution_message.encode(UiTransactionEncoding::JsonParsed))?;
+    let encoded_execution_message = encode_execution_message(execution_message);
+    let execution_json = serde_json::to_string_pretty(&encoded_execution_message)?;
+    let review_section = review_section(
+        execution_message,
+        &undecoded_instructions(&encoded_execution_message),
+        signers.authorities,
+    );
     let authorization_json =
         serde_json::to_string_pretty(&authorization_message.encode(UiTransactionEncoding::Json))?;
     let signing_keys = signers
@@ -101,9 +107,80 @@ pub(super) fn render_signing_summary(
         === Execution message (what the executor program invokes via CPI) ===
         v1 message:
         {execution_json}
-
+        {review_section}
         {closing}"
     })
+}
+
+/// Instructions the summary cannot decode, with the signers each receives, or nothing when every
+/// instruction is decoded. Placed last so it sits next to the confirmation prompt.
+fn review_section(
+    execution_message: &v1::Message,
+    undecoded: &[usize],
+    authorities: &[Address],
+) -> String {
+    if undecoded.is_empty() {
+        return String::new();
+    }
+    let derived_signers = authorities
+        .iter()
+        .map(|authority| {
+            (
+                ProgrammaticSigner::derive_address(&spl_ed25519_signer_client::id(), authority),
+                authority,
+            )
+        })
+        .collect::<Vec<_>>();
+    let instructions = undecoded
+        .iter()
+        .map(|&index| {
+            // Infallible: the execution message is sanitized, so every index is in bounds.
+            let instruction = &execution_message.instructions[index];
+            let program_id =
+                execution_message.account_keys[usize::from(instruction.program_id_index)];
+            let mut signer_indexes = instruction
+                .accounts
+                .iter()
+                .map(|account| usize::from(*account))
+                .filter(|account| execution_message.is_signer(*account))
+                .collect::<Vec<_>>();
+            signer_indexes.sort_unstable();
+            signer_indexes.dedup();
+            let signers = signer_indexes
+                .into_iter()
+                .map(|account| {
+                    let address = execution_message.account_keys[account];
+                    match derived_signers.iter().find(|(pda, _)| *pda == address) {
+                        Some((_, authority)) => {
+                            format!("    {address} (PDA of {authority})")
+                        }
+                        None => format!("    {address}"),
+                    }
+                })
+                .collect::<Vec<_>>();
+            let signers = if signers.is_empty() {
+                "  No signers".to_owned()
+            } else {
+                format!("  Signers it receives:\n{}", signers.join("\n"))
+            };
+            let length = instruction.data.len();
+            let bytes = if length == 1 { "byte" } else { "bytes" };
+            format!(
+                "Instruction {index}: program {program_id}\n  Data: {length} {bytes} (see \
+                 instructions[{index}] in the execution message above)\n{signers}"
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    formatdoc! {"
+
+        === Review required ===
+        This CLI cannot decode these execution message instructions. Check each program and its
+        instruction data independently before signing. Each signer listed is a signer for that
+        program.
+        {instructions}
+        "
+    }
 }
 
 /// A titled list of signers, or nothing when there are none.

@@ -1,4 +1,5 @@
 mod decode;
+mod parse;
 mod sign;
 mod simulate;
 mod state_changes;
