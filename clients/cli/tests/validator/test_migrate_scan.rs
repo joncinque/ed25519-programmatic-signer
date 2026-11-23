@@ -71,6 +71,29 @@ pub async fn scans_owner_for_migrations(env: &TestEnv) {
     .await;
     // Owned by someone else entirely.
     create_stake_account(env, &Authorized::auto(&other.pubkey()), &Lockup::default()).await;
+    // The owner's custodianship only counts while the lockup is in force.
+    let locked = Lockup {
+        unix_timestamp: 0,
+        epoch: u64::MAX,
+        custodian: owner.pubkey(),
+    };
+    let staker_and_custodian = create_stake_account(
+        env,
+        &Authorized {
+            staker: owner.pubkey(),
+            withdrawer: other.pubkey(),
+        },
+        &locked,
+    )
+    .await;
+    let custodian_only =
+        create_stake_account(env, &Authorized::auto(&other.pubkey()), &locked).await;
+    create_stake_account(
+        env,
+        &Authorized::auto(&other.pubkey()),
+        &Lockup { epoch: 0, ..locked },
+    )
+    .await;
 
     let vote = create_vote_account(env, &Keypair::new(), &owner.pubkey()).await;
     // The owner is the voter and node identity here, which don't migrate.
@@ -171,6 +194,24 @@ pub async fn scans_owner_for_migrations(env: &TestEnv) {
             command(&format!(
                 "stake {staker_only} --new-authority-signing-pubkey {new_owner} --authority-type \
                  staker"
+            )),
+        ),
+        (
+            staker_and_custodian.to_string(),
+            STAKE_LAMPORTS,
+            vec!["staker".to_string(), "custodian".to_string()],
+            command(&format!(
+                "stake {staker_and_custodian} --new-authority-signing-pubkey {new_owner} \
+                 --authority-type staker,custodian"
+            )),
+        ),
+        (
+            custodian_only.to_string(),
+            STAKE_LAMPORTS,
+            vec!["custodian".to_string()],
+            command(&format!(
+                "stake {custodian_only} --new-authority-signing-pubkey {new_owner} \
+                 --authority-type custodian"
             )),
         ),
     ];
@@ -390,7 +431,7 @@ pub async fn scans_owner_for_migrations(env: &TestEnv) {
         .stdout,
     )
     .unwrap();
-    assert!(display.contains("Stake accounts (2):"), "{display}");
+    assert!(display.contains("Stake accounts (4):"), "{display}");
     assert!(
         display.contains("Vote accounts (withdrawer) (1):"),
         "{display}"

@@ -22,7 +22,7 @@ use {
     solana_native_token::Sol,
     solana_program_pack::Pack,
     solana_rpc_client_types::filter::{Memcmp, RpcFilterType},
-    solana_stake_interface::state::StakeStateV2,
+    solana_stake_interface::state::{Meta, StakeStateV2},
     spl_associated_token_account_interface::address::get_associated_token_address_with_program_id,
     spl_token_2022_interface::{
         extension::AccountType,
@@ -36,9 +36,10 @@ use {
 };
 
 // Stake account layout: a u32 state tag and a u64 rent-exempt reserve, then the staker and
-// withdrawer.
+// withdrawer, then the lockup's i64 timestamp, u64 epoch and custodian.
 const STAKER_OFFSET: usize = 12;
 const WITHDRAWER_OFFSET: usize = 44;
+const CUSTODIAN_OFFSET: usize = 92;
 // Vote account layout: a u32 version tag and the node identity, then the withdrawer.
 const VOTE_WITHDRAWER_OFFSET: usize = 36;
 // Program data layout: a u32 state tag and a u64 slot, then the upgrade authority as an option.
@@ -98,7 +99,7 @@ pub(super) async fn run(
 
     // Each category is scanned and reported on its own, some RPC nodes may be limited
     // for some categories
-    let (stake, vote, program, mint, token, sol) = tokio::join!(
+    let ((stake, stake_custodian), vote, program, mint, token, sol) = tokio::join!(
         scan_stake(client, owner, &new_authority_args),
         scan_vote(client, owner, &new_authority_args),
         scan_program(client, owner, &new_authority_args),
@@ -109,6 +110,7 @@ pub(super) async fn run(
     output.render(&ScanOutput {
         owner: owner.to_string(),
         stake: stake.map_err(error_string),
+        stake_custodian: stake_custodian.map_err(error_string),
         vote: vote.map_err(error_string),
         program: program.map_err(error_string),
         mint: mint.map_err(error_string),
@@ -133,61 +135,117 @@ fn data_size(size: usize) -> RpcFilterType {
     RpcFilterType::DataSize(size as u64)
 }
 
+/// Scans stake accounts by staker and withdrawer, and separately by custodian. Returns the stake
+/// accounts and the result of the custodian scan.
 async fn scan_stake(
     client: &Client,
     owner: &Address,
     new_authority_args: &[&str],
-) -> Result<Vec<StakeScanItem>> {
-    let mut accounts = BTreeMap::<Address, (u64, Vec<stake::AuthorityType>)>::new();
-    for (role, offset) in [
-        (stake::AuthorityType::Staker, STAKER_OFFSET),
-        (stake::AuthorityType::Withdrawer, WITHDRAWER_OFFSET),
-    ] {
-        let matches = client
-            .program_accounts(
-                &solana_stake_interface::program::id(),
-                vec![
-                    data_size(StakeStateV2::size_of()),
-                    memcmp(offset, owner.as_ref()),
-                ],
-                None,
+) -> (Result<Vec<StakeScanItem>>, Result<()>) {
+    let (authorities, custodians) = tokio::join!(
+        async {
+            let mut accounts = BTreeMap::<Address, (u64, Vec<stake::AuthorityType>)>::new();
+            for (role, offset) in [
+                (stake::AuthorityType::Staker, STAKER_OFFSET),
+                (stake::AuthorityType::Withdrawer, WITHDRAWER_OFFSET),
+            ] {
+                for (address, lamports, _) in
+                    stake_accounts_with_authority(client, owner, role, offset).await?
+                {
+                    accounts
+                        .entry(address)
+                        .or_insert((lamports, vec![]))
+                        .1
+                        .push(role);
+                }
+            }
+            anyhow::Ok(accounts)
+        },
+        async {
+            let accounts = stake_accounts_with_authority(
+                client,
+                owner,
+                stake::AuthorityType::Custodian,
+                CUSTODIAN_OFFSET,
             )
             .await?;
-        for (address, account) in matches {
-            let Some(meta) = decode_stake_account(&address, &account)
-                .ok()
-                .and_then(|state| state.meta())
-            else {
-                continue;
-            };
-            if role.current_authority(&meta) == *owner {
-                accounts
-                    .entry(address)
-                    .or_insert((account.lamports, vec![]))
-                    .1
-                    .push(role);
+            // Usually there are none, so skip the clock lookup.
+            if accounts.is_empty() {
+                return anyhow::Ok(vec![]);
             }
+            // A custodian only has authority while the lockup is in force.
+            let clock = client.clock().await?;
+            anyhow::Ok(
+                accounts
+                    .into_iter()
+                    .filter(|(_, _, meta)| meta.lockup.is_in_force(&clock, None))
+                    .map(|(address, lamports, _)| (address, lamports))
+                    .collect::<Vec<_>>(),
+            )
+        },
+    );
+    let mut accounts = match authorities {
+        Ok(accounts) => accounts,
+        Err(error) => return (Err(error), custodians.map(drop)),
+    };
+    let custodians = custodians.map(|custodians| {
+        for (address, lamports) in custodians {
+            accounts
+                .entry(address)
+                .or_insert((lamports, vec![]))
+                .1
+                .push(stake::AuthorityType::Custodian);
         }
-    }
+    });
 
-    Ok(accounts
+    let items = accounts
         .into_iter()
         .map(|(address, (lamports, roles))| {
             let address = address.to_string();
+            let names = roles.iter().map(|role| role.name()).collect::<Vec<_>>();
+            let authority_types = names.join(",");
             let mut args = vec!["stake", &address];
             args.extend(new_authority_args);
-            // `migrate stake` moves both roles by default
-            // if `roles` is only one, we add `--authority-type` for it
-            // note that we only add an entry with a role, so this is always non-empty
-            if let [role] = roles.as_slice() {
-                args.extend(["--authority-type", role.name()]);
+            // `migrate stake` moves the staker and withdrawer by default, and the custodian too
+            // when it is one of them. Otherwise, name each authority type the owner holds.
+            if !(roles.contains(&stake::AuthorityType::Staker)
+                && roles.contains(&stake::AuthorityType::Withdrawer))
+            {
+                args.extend(["--authority-type", &authority_types]);
             }
             StakeScanItem {
                 command: migrate_command(&args),
-                authority_types: roles.iter().map(|role| role.name().to_string()).collect(),
+                authority_types: names.into_iter().map(String::from).collect(),
                 lamports,
                 stake_account: address,
             }
+        })
+        .collect();
+    (Ok(items), custodians)
+}
+
+/// Stake accounts where `owner` is the authority of type `role`, with their lamports and metadata.
+async fn stake_accounts_with_authority(
+    client: &Client,
+    owner: &Address,
+    role: stake::AuthorityType,
+    offset: usize,
+) -> Result<Vec<(Address, u64, Meta)>> {
+    let matches = client
+        .program_accounts(
+            &solana_stake_interface::program::id(),
+            vec![
+                data_size(StakeStateV2::size_of()),
+                memcmp(offset, owner.as_ref()),
+            ],
+            None,
+        )
+        .await?;
+    Ok(matches
+        .into_iter()
+        .filter_map(|(address, account)| {
+            let meta = decode_stake_account(&address, &account).ok()?.meta()?;
+            (role.current_authority(&meta) == *owner).then_some((address, account.lamports, meta))
         })
         .collect())
 }
@@ -458,6 +516,9 @@ async fn scan_sol(
 pub struct ScanOutput {
     pub owner: String,
     pub stake: Result<Vec<StakeScanItem>, String>,
+    /// Whether stake accounts were scanned by custodian too. Scanned separately, so the stake
+    /// accounts are still listed if this fails.
+    pub stake_custodian: Result<(), String>,
     pub vote: Result<Vec<VoteScanItem>, String>,
     pub program: Result<Vec<ProgramScanItem>, String>,
     pub mint: Result<Vec<MintScanItem>, String>,
@@ -470,6 +531,7 @@ impl ScanOutput {
     fn errors(&self) -> Vec<ScanError> {
         [
             ("stake", self.stake.as_ref().err()),
+            (STAKE_CUSTODIAN, self.stake_custodian.as_ref().err()),
             ("vote", self.vote.as_ref().err()),
             ("program", self.program.as_ref().err()),
             ("mint", self.mint.as_ref().err()),
@@ -486,6 +548,9 @@ impl ScanOutput {
         .collect()
     }
 }
+
+/// The error category for the stake custodian scan, which has no JSON field of its own.
+const STAKE_CUSTODIAN: &str = "stake custodian";
 
 /// The JSON shape of [`ScanOutput`].
 #[derive(Deserialize, Serialize)]
@@ -528,6 +593,7 @@ impl From<ScanJson> for ScanOutput {
         Self {
             owner: json.owner,
             stake: scan_result(&mut errors, "stake", json.stake).map(Option::unwrap_or_default),
+            stake_custodian: scan_result(&mut errors, STAKE_CUSTODIAN, Some(())).map(drop),
             vote: scan_result(&mut errors, "vote", json.vote).map(Option::unwrap_or_default),
             program: scan_result(&mut errors, "program", json.program)
                 .map(Option::unwrap_or_default),
@@ -735,6 +801,7 @@ mod tests {
         ScanOutput {
             owner: "owner".to_string(),
             stake: Err("stake failed".to_string()),
+            stake_custodian: Ok(()),
             vote: Ok(vec![VoteScanItem {
                 vote_account: "vote".to_string(),
                 lamports: 1,
@@ -772,6 +839,37 @@ mod tests {
         assert_eq!(output.sol.unwrap_err(), "sol failed");
         assert_eq!(output.vote.unwrap()[0].vote_account, "vote");
         assert!(output.program.unwrap().is_empty());
+    }
+
+    #[test]
+    fn stake_custodian_fails_on_its_own() {
+        let output = ScanOutput {
+            stake: Ok(vec![]),
+            stake_custodian: Err("custodian failed".to_string()),
+            sol: Ok(SolScanItem::default()),
+            ..partly_failed()
+        };
+        let json = serde_json::to_value(output).unwrap();
+        assert_eq!(json["stake"], json!([]));
+        assert_eq!(
+            json["errors"],
+            json!([{ "category": "stake custodian", "error": "custodian failed" }])
+        );
+
+        let output = serde_json::from_value::<ScanOutput>(json).unwrap();
+        assert!(output.stake.as_ref().unwrap().is_empty());
+        assert_eq!(
+            output.stake_custodian.as_ref().unwrap_err(),
+            "custodian failed"
+        );
+        let display = output.to_string();
+        assert!(display.contains("Stake accounts: none"), "{display}");
+        assert!(
+            display.ends_with(
+                "Not scanned, so there may be more:\n  stake custodian: custodian failed"
+            ),
+            "{display}"
+        );
     }
 
     #[test]
